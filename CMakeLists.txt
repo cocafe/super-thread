@@ -34,6 +34,10 @@ set(SOURCE_FILES
     cJSON.h
     list.h
     config_opts.c
+    config_opts.h
+    tommy_test.c
+    syshandle.c
+    syshandle.h
     )
 
 set(APPRES_OBJS)
@@ -55,6 +59,8 @@ include_directories(tommyds)
 target_link_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/tommyds)
 target_link_libraries(${PROJECT_NAME} tommyds)
 target_link_libraries(${PROJECT_NAME} iconv)
+target_link_libraries(${PROJECT_NAME} ntdll)
+target_link_libraries(${PROJECT_NAME} ntoskrnl)
 
 message(STATUS "CMake Config: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C Compiler: " ${CMAKE_C_COMPILER})

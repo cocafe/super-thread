@@ -7,7 +7,7 @@
 
 #include "logging.h"
 
-uint32_t g_verbose_print = 0;
+uint32_t g_verbose_print = 1;
 
 #ifdef __WINNT__
 

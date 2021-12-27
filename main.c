@@ -12,10 +12,12 @@
 #include <windowsx.h>
 #include <winuser.h>
 #include <winnls.h>
-
+#include <winternl.h>
+#include <fileapi.h>
 #include <TlHelp32.h>
 
 #include "logging.h"
+#include "syshandle.h"
 #include "config_opts.h"
 
 #define TT_INFO                 "INFO"
@@ -497,6 +499,48 @@ out:
         free(__buf);
 }
 
+int __privilege_get(const char *priv_name)
+{
+        HANDLE token;
+        TOKEN_PRIVILEGES tkp;
+
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+                pr_err("OpenProcessToken() failed, err=%lu\n", GetLastError());
+                return -EINVAL;
+        }
+
+        LookupPrivilegeValue(NULL, priv_name, &tkp.Privileges[0].Luid);
+        tkp.PrivilegeCount = 1;
+        tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, FALSE, &tkp, 0, NULL, 0)) {
+                pr_err("AdjustTokenPrivileges() err=%lu\n", GetLastError());
+                return -EINVAL;
+        }
+
+        return 0;
+}
+
+int privilege_get(void)
+{
+        static const char *sec_tokens[] = {
+                SE_ASSIGNPRIMARYTOKEN_NAME,
+                SE_DEBUG_NAME,
+                SE_INC_BASE_PRIORITY_NAME,
+        };
+
+        int err;
+
+        for (size_t i = 0; i < ARRAY_SIZE(sec_tokens); i++) {
+                if ((err = __privilege_get(sec_tokens[i]))) {
+                        pr_err("failed to request %s\n", sec_tokens[i]);
+                        break;
+                }
+        }
+
+        return err;
+}
+
 int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
                    LPSTR cmdline, int cmdshow)
 {
@@ -522,7 +566,8 @@ int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         MB_MSG_ERR("PRESS TO START");
 
-        system_process_list();
+        privilege_get();
+        system_handle_query();
 
 //        {
 //                char proc[] = "super-thread - 哈哈哈.exe";
@@ -538,8 +583,6 @@ int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
         }
-
-
 
 free_logging:
         logging_exit();
