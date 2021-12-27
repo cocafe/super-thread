@@ -36,7 +36,21 @@ set(SOURCE_FILES
     config_opts.c
     config_opts.h tommy_test.c)
 
-add_executable(${PROJECT_NAME} ${SOURCE_FILES})
+set(APPRES_OBJS)
+if (WIN32 AND MINGW)
+        set(WINRES_OUT ${CMAKE_BINARY_DIR}/appres.o)
+
+        add_custom_command(
+                OUTPUT ${WINRES_OUT}
+                COMMAND windres ${CMAKE_CURRENT_SOURCE_DIR}/app.rc ${WINRES_OUT}
+        )
+
+        add_custom_target(WinResObj ALL DEPENDS ${WINRES_OUT})
+
+        set(APPRES_OBJS ${WINRES_OUT})
+endif()
+
+add_executable(${PROJECT_NAME} ${SOURCE_FILES} ${APPRES_OBJS})
 include_directories(tommyds)
 target_link_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/tommyds)
 target_link_libraries(${PROJECT_NAME} tommyds)
