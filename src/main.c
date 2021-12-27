@@ -31,6 +31,10 @@
 #define MB_FUNC_ERR()           MB_MSG_ERR("%s:%d %s() failed", __FILE__, __LINE__, __func__)
 
 #define ICONV_UTF8              "UTF-8"
+#define ICONV_CP936             "CP936"
+#ifdef __x86_64__
+#define ICONV_WIN_WCHAR         "UTF-16LE"
+#endif
 
 int mb_printf(const char *title, UINT flags, const char *fmt, ...)
 {
@@ -291,6 +295,117 @@ out:
         return ret;
 }
 
+int process_cmdline_get(DWORD pid)
+{
+        HANDLE process, heap;
+        PROCESS_BASIC_INFORMATION *pbi;
+        ULONG pbi_sz;
+        int ret = 0, nt_ret;
+
+        process = OpenProcess(PROCESS_QUERY_INFORMATION |
+                                PROCESS_QUERY_LIMITED_INFORMATION |
+                                PROCESS_VM_READ,
+                                FALSE,
+                                pid);
+
+        if (process == NULL) {
+                pr_err("OpenProcess() failed, err=%lu\n", GetLastError());
+                return -EFAULT;
+        }
+
+        heap = GetProcessHeap();
+        pbi = HeapAlloc(heap, HEAP_ZERO_MEMORY, sizeof(PROCESS_BASIC_INFORMATION));
+
+        if (!pbi) {
+                pr_err("failed to allocate memory for PBI\n");
+                ret = -ENOMEM;
+                goto out_handle;
+        }
+
+        nt_ret = NtQueryInformationProcess(process,
+                                           ProcessBasicInformation,
+                                           pbi,
+                                           sizeof(PROCESS_BASIC_INFORMATION),
+                                           &pbi_sz);
+        if (nt_ret >= 0 && sizeof(PROCESS_BASIC_INFORMATION) < pbi_sz) {
+                HeapFree(heap, 0, pbi);
+                pbi = HeapAlloc(heap, HEAP_ZERO_MEMORY, pbi_sz);
+                if (!pbi) {
+                        pr_err("failed to allocate memory for PBI\n");
+                        goto out_handle;
+                }
+
+                nt_ret = NtQueryInformationProcess(process,
+                                                   ProcessBasicInformation,
+                                                   pbi,
+                                                   pbi_sz,
+                                                   &pbi_sz);
+        }
+
+        if (!NT_SUCCESS(nt_ret)) {
+                pr_err("NtQueryInformationProcess() err=%lu\n", GetLastError());
+                ret = -EFAULT;
+                goto out_free;
+        }
+
+        if (!pbi->PebBaseAddress) {
+                pr_err("invalid PEB base address\n");
+                ret = -EINVAL;
+                goto out_free;
+        }
+
+        {
+                PEB peb;
+                RTL_USER_PROCESS_PARAMETERS cmdl_info;
+                size_t nread;
+                wchar_t *cmdl;
+
+                if (0 == ReadProcessMemory(process, pbi->PebBaseAddress, &peb, sizeof(peb), &nread))
+                        goto out_free;
+
+                if (0 == ReadProcessMemory(process, peb.ProcessParameters, &cmdl_info, sizeof(cmdl_info), &nread))
+                        goto out_free;
+
+                cmdl = HeapAlloc(heap, HEAP_ZERO_MEMORY, cmdl_info.CommandLine.Length);
+                if (!cmdl)
+                        goto out_free;
+
+                if (0 == ReadProcessMemory(process,
+                                           cmdl_info.CommandLine.Buffer,
+                                           cmdl,
+                                           cmdl_info.CommandLine.Length,
+                                           &nread)) {
+                        HeapFree(heap, 0, cmdl);
+                        goto out_free;
+                }
+
+                {
+                        char utf8[256] = { 0 };
+                        char cp936[256] = { 0 };
+
+                        // this convert to utf8 but, with junk at the end
+//                        wcstombs(wcc, cmdl, sizeof(wcc) < cmdl_info.CommandLine.Length ? sizeof(wcc) : cmdl_info.CommandLine.Length);
+
+                        iconv_convert((void *)cmdl, cmdl_info.CommandLine.Length, ICONV_WIN_WCHAR, ICONV_UTF8, utf8, sizeof(utf8));
+                        iconv_convert(utf8, strlen(utf8), ICONV_UTF8, ICONV_CP936, cp936, sizeof(cp936));
+
+                        pr_info("iconv utf8: %s\n", utf8);
+                        pr_info("iconv cp936: %s\n", cp936);
+                }
+
+                pr_info("pid: %lu cmdline: %.*ls\n", pid, cmdl_info.CommandLine.Length, cmdl);
+        }
+
+out_free:
+        if (pbi)
+                HeapFree(heap, 0, pbi);
+
+out_handle:
+        CloseHandle(process);
+
+        return ret;
+}
+
 int system_process_list(void)
 {
         HANDLE hProcessSnap;
@@ -315,7 +430,11 @@ int system_process_list(void)
 
         do {
                 dwPriorityClass = 0;
-                hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ProcessID);
+                hProcess = OpenProcess(PROCESS_ALL_ACCESS |
+                                        PROCESS_QUERY_INFORMATION |
+                                        PROCESS_QUERY_LIMITED_INFORMATION,
+                                        FALSE,
+                                        pe32.th32ProcessID);
                 if (hProcess) {
                         dwPriorityClass = GetPriorityClass(hProcess);
                         if (!dwPriorityClass)
@@ -323,7 +442,9 @@ int system_process_list(void)
 
                         CloseHandle(hProcess);
                 }
+
                 pr_info("pid: %5lu name: %s prio_class: %ld\n", pe32.th32ProcessID, pe32.szExeFile, dwPriorityClass);
+
                 process_module_list(pe32.th32ProcessID);
                 process_thread_list(pe32.th32ProcessID);
         } while (Process32Next(hProcessSnap, &pe32));
@@ -567,7 +688,10 @@ int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
         MB_MSG_ERR("PRESS TO START");
 
         privilege_get();
-        system_handle_query();
+
+        process_cmdline_get(26712);
+
+//        system_handle_query();
 
 //        {
 //                char proc[] = "super-thread - 哈哈哈.exe";
