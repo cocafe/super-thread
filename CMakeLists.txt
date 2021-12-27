@@ -25,19 +25,19 @@ endif()
 add_subdirectory(tommyds)
 
 set(SOURCE_FILES
-    main.c
-    tray.c
-    endian.h
-    logging.c
-    logging.h
-    cJSON.c
-    cJSON.h
-    list.h
-    config_opts.c
-    config_opts.h
-    tommy_test.c
-    syshandle.c
-    syshandle.h
+    src/main.c
+    src/tray.c
+    src/endian.h
+    src/logging.c
+    src/logging.h
+    src/cJSON.c
+    src/cJSON.h
+    src/list.h
+    src/config_opts.c
+    src/config_opts.h
+    src/tommy_test.c
+    src/syshandle.c
+    src/syshandle.h
     )
 
 set(APPRES_OBJS)
