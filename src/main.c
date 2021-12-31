@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include <iconv.h>
 
@@ -683,7 +684,7 @@ int group_affinity_get(HANDLE process, GROUP_AFFINITY *gf)
                                            pgi_sz,
                                            &needed);
         if (!NT_SUCCESS(nt_ret)) {
-                pr_err("failed to query process group info\n", GetLastError());
+                pr_err("failed to query process group info, err=%lu\n", GetLastError());
                 return -EFAULT;
         }
 
@@ -736,6 +737,9 @@ void affinity_test(DWORD pid)
                                         pid);
         GROUP_AFFINITY gf = { 0 };
 
+        if (!process)
+                return;
+
         if (group_affinity_get(process, &gf)) {
                 pr_err("group_affinity_get() failed\n");
                 return;
@@ -754,6 +758,174 @@ void affinity_test(DWORD pid)
         group_affinity_set(process, &gf);
 
         CloseHandle(process);
+}
+
+static size_t active_processor_group;
+
+int process_processor_group_get(DWORD pid, uint16_t *group_cnt, uint16_t **group_arr)
+{
+        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                     FALSE,
+                                     pid);
+        USHORT cnt;
+        USHORT *arr;
+        int err = 0;
+
+        if (!process)
+                return -ENOENT;
+
+        if (GetProcessGroupAffinity(process, &cnt, NULL) == FALSE) {
+                if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+                        err = -EFAULT;
+                        goto err_handle;
+                }
+        }
+
+        arr = calloc(cnt, sizeof(USHORT));
+        if (!arr) {
+                err = -ENOMEM;
+                goto err_handle;
+        }
+
+        if (FALSE == GetProcessGroupAffinity(process, &cnt, arr)) {
+                err = -EFAULT;
+                goto err_free;
+        }
+
+        if (group_cnt)
+                *group_cnt = cnt;
+
+        if (group_arr)
+                *group_arr = arr;
+
+        return err;
+
+err_free:
+        free(arr);
+
+err_handle:
+        CloseHandle(process);
+
+        return err;
+}
+
+int process_group_check(DWORD pid)
+{
+        uint16_t group_cnt = 0;
+        uint16_t *group_arr = NULL;
+        int err = 0;
+
+        if ((err = process_processor_group_get(pid, &group_cnt, &group_arr))) {
+                pr_err("GetProcessGroupAffinity() failed\n");
+                return err;
+        }
+
+        if (group_cnt > 1)
+                pr_info("pid %lu is already multi-group!\n", pid);
+
+        if (group_arr) {
+                pr_info("pid %lu currently on group: ", pid);
+                for (unsigned i = 0; i < group_cnt; i++) {
+                        pr_raw("%hu ", group_arr[i]);
+                }
+                pr_raw("\n");
+        }
+
+        if (group_arr)
+                free(group_arr);
+
+        return err;
+}
+
+int thread_iterate(THREADENTRY32 te32)
+{
+        GROUP_AFFINITY affinity;
+        HANDLE thread = OpenThread(THREAD_SET_INFORMATION |
+                                   THREAD_QUERY_INFORMATION,
+                                   FALSE,
+                                   te32.th32ThreadID);
+        int err = 0;
+
+        if (!thread) {
+                pr_err("OpenThread() failed, tid: %lu err=%lu\n",
+                       te32.th32ThreadID, GetLastError());
+                return -EFAULT;
+        }
+
+        if (0 == GetThreadGroupAffinity(thread, &affinity)) {
+                pr_err("GetThreadGroupAffinity() failed, tid=%lu err=%lu\n",
+                       te32.th32ThreadID, GetLastError());
+                err = -EFAULT;
+                goto out_handle;
+        }
+
+        pr_raw("tid: %6lu group: %2hu affinity: 0x%016zx\n", te32.th32ThreadID, affinity.Group, affinity.Mask);
+
+//        {
+//                unsigned cnt = rand() % 2;
+//
+//                affinity.Group = cnt;
+//                affinity.Mask = 0xfff;
+//
+//                if (0 == SetThreadGroupAffinity(thread, &affinity, NULL))
+//                        pr_err("SetThreadGroupAffinity() failed, tid=%lu err=%lu\n", te32.th32ThreadID, GetLastError());
+//        }
+
+out_handle:
+        CloseHandle(thread);
+
+        return err;
+}
+
+int thread_affinity_manage(DWORD pid)
+{
+        HANDLE snap;
+        THREADENTRY32 te32;
+        int err = 0;
+
+        if ((err = process_group_check(pid)))
+                return err;
+
+        // @th32ProcessID is ignored in TH32CS_SNAPTHREAD
+        snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (snap == INVALID_HANDLE_VALUE) {
+                pr_err("CreateToolhelp32Snapshot() failed, err=%lu\n", GetLastError());
+                err = -EFAULT;
+                goto out;
+        }
+
+        te32.dwSize = sizeof(THREADENTRY32);
+        if (!Thread32First(snap, &te32)) {
+                pr_err("Thread32First() failed\n");
+                err = -EFAULT;
+                goto out_handle;
+        }
+
+        pr_info("pid: %lu\n", pid);
+
+        do {
+                if (pid != te32.th32OwnerProcessID)
+                        continue;
+
+                thread_iterate(te32);
+        } while(Thread32Next(snap, &te32));
+
+out_handle:
+        CloseHandle(snap);
+
+out:
+        return err;
+}
+
+int thread_affinity_manage_init(void)
+{
+        active_processor_group = GetActiveProcessorGroupCount();
+
+        if (active_processor_group < 2) {
+                pr_info("active processor group count %zu < 2\n", active_processor_group);
+        }
+
+        return 0;
 }
 
 int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
@@ -783,7 +955,10 @@ int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         privilege_get();
 
-        affinity_test(26012);
+        thread_affinity_manage_init();
+        thread_affinity_manage(17356);
+
+//        affinity_test(26012);
 
 //        process_cmdline_get(14140);
 
