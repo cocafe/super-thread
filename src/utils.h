@@ -321,4 +321,17 @@ static inline int is_cjson_type(uint32_t a, uint32_t b)
 void json_traverse(cJSON *root, uint32_t depth);
 int json_validate(cJSON *root, cJSON *verify);
 
+//
+// MSVC heap
+//
+#if defined (__MSVCRT__) || defined (_MSC_VER)
+void heap_init(void);
+void *halloc(size_t sz);
+void hfree(void *ptr);
+#else
+static inline void heap_init(void) { };
+static inline void *halloc(size_t sz) { return malloc(sz); };
+static inline void hfree(void *ptr) { free(ptr); };
+#endif
+
 #endif //__JJ_UTILS_H__
