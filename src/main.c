@@ -662,6 +662,100 @@ int privilege_get(void)
         return err;
 }
 
+int group_affinity_get(HANDLE process, GROUP_AFFINITY *gf)
+{
+        PROCESS_BASIC_INFORMATION pbi;
+        WORD *pgi;
+        ULONG pgi_sz = sizeof(int64_t);
+        HANDLE heap;
+        ULONG needed;
+        int ret = 0, nt_ret;
+
+        if (INVALID_HANDLE_VALUE == process || !gf)
+                return -EINVAL;
+
+        heap = GetProcessHeap();
+        pgi = HeapAlloc(heap, HEAP_ZERO_MEMORY, pgi_sz);
+
+        nt_ret = NtQueryInformationProcess(process,
+                                           ProcessGroupInformation,
+                                           pgi,
+                                           pgi_sz,
+                                           &needed);
+        if (!NT_SUCCESS(nt_ret)) {
+                pr_err("failed to query process group info\n", GetLastError());
+                return -EFAULT;
+        }
+
+        nt_ret = NtQueryInformationProcess(process,
+                                           ProcessBasicInformation,
+                                           &pbi,
+                                           sizeof(pbi),
+                                           &needed);
+        if (!NT_SUCCESS(nt_ret)) {
+                pr_err("failed to query process basic info\n");
+                ret = -EFAULT;
+                goto out;
+        }
+
+        memset(gf, 0x00, sizeof(GROUP_AFFINITY));
+        gf->Mask = pbi.AffinityMask;
+        gf->Group = *pgi;
+
+out:
+        HeapFree(heap, 0, pgi);
+
+        return ret;
+}
+
+int group_affinity_set(HANDLE process, GROUP_AFFINITY *gf)
+{
+        int nt_ret;
+
+        if (INVALID_HANDLE_VALUE == process || !gf)
+                return -EINVAL;
+
+        nt_ret = NtSetInformationProcess(process,
+                                         ProcessAffinityMask,
+                                         gf,
+                                         sizeof(GROUP_AFFINITY));
+        if (!NT_SUCCESS(nt_ret)) {
+                pr_err("failed to set process affnity mask\n");
+                return -EFAULT;
+        }
+
+        return 0;
+}
+
+void affinity_test(DWORD pid)
+{
+        HANDLE process = OpenProcess(PROCESS_ALL_ACCESS |
+                                        PROCESS_QUERY_INFORMATION |
+                                        PROCESS_QUERY_LIMITED_INFORMATION,
+                                        FALSE,
+                                        pid);
+        GROUP_AFFINITY gf = { 0 };
+
+        if (group_affinity_get(process, &gf)) {
+                pr_err("group_affinity_get() failed\n");
+                return;
+        }
+
+        if (gf.Mask == 0) {
+                pr_err("process is thread group affinity managed\n");
+                return;
+        }
+
+        memset(&gf, 0x00, sizeof(gf));
+
+        gf.Mask = 0xf;
+        gf.Group = 1;
+
+        group_affinity_set(process, &gf);
+
+        CloseHandle(process);
+}
+
 int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
                    LPSTR cmdline, int cmdshow)
 {
@@ -689,7 +783,9 @@ int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         privilege_get();
 
-        process_cmdline_get(26712);
+        affinity_test(26012);
+
+//        process_cmdline_get(14140);
 
 //        system_handle_query();
 
