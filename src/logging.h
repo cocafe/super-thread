@@ -229,7 +229,7 @@ int logging_exit(void);
 
 #define pr_verbose(msg, fmt...)                                                 \
         do {                                                                    \
-                if (zlog_inited)                                        \
+                if (zlog_inited)                                                \
                         dzlog_debug(msg, ##fmt);                                \
                                                                                 \
                 if (!g_verbose_print)                                           \
@@ -241,10 +241,18 @@ int logging_exit(void);
 
 #define pr_info(msg, fmt...)                                                    \
         do {                                                                    \
-                if (zlog_inited)                                        \
+                if (zlog_inited)                                                \
                         dzlog_info(msg, ##fmt);                                 \
                                                                                 \
                 __pr_wrapped(stdout, INFO_COLOR, "%s(): ", __func__);           \
+                __pr_wrapped(stdout, INFO_COLOR, msg, ##fmt);                   \
+        } while(0)
+
+#define pr_raw(msg, fmt...)                                                     \
+        do {                                                                    \
+                if (zlog_inited)                                                \
+                        dzlog_info(msg, ##fmt);                                 \
+                                                                                \
                 __pr_wrapped(stdout, INFO_COLOR, msg, ##fmt);                   \
         } while(0)
 
@@ -254,7 +262,7 @@ int logging_exit(void);
                 if (__t)                                                        \
                         break;                                                  \
                                                                                 \
-                if (zlog_inited)                                        \
+                if (zlog_inited)                                                \
                         dzlog_info(msg, ##fmt);                                 \
                                                                                 \
                 __pr_wrapped(stdout, NOTICE_COLOR, "%s(): ", __func__);         \
