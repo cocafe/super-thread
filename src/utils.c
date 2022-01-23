@@ -10,8 +10,8 @@
 #include <heapapi.h>
 #endif
 
+#include "logging.h"
 #include "cJSON.h"
-
 #include "utils.h"
 
 //
@@ -140,12 +140,24 @@ int pthread_mutex_multi_trylock(pthread_mutex_t *lock)
 // helper
 //
 
+#ifdef __MSVCRT__
+int is_valid_ipaddr(char *ipstr, int ipver)
+{
+        UNUSED_PARAM(ipstr);
+        UNUSED_PARAM(ipver);
+
+        pr_err("not implemented on MSVC\n");
+
+        return 0;
+}
+#else
 int is_valid_ipaddr(char *ipstr, int ipver)
 {
         unsigned char buf[sizeof(struct in6_addr)];
 
         return (inet_pton(ipver, ipstr, buf) == 1);
 }
+#endif
 
 int float_equal(float a, float b, float epsilon)
 {
@@ -373,379 +385,70 @@ int buf_backward_discard(buf_t *buf, size_t len)
 }
 
 /*
- * json utils
+ * cJSON utils
  */
 
-void json_traverse(cJSON *root, uint32_t depth)
+void json_traverse_print(cJSON *node)
 {
-        char *padding = alloca(32);
-        cJSON *curr = NULL;
+        switch (node->type) {
+        case cJSON_NULL:
+                pr_color(FG_LT_RED, "[null]   ");
+                break;
+        case cJSON_Number:
+                pr_color(FG_LT_MAGENTA, "[number] ");
+                break;
+        case cJSON_String:
+                pr_color(FG_LT_GREEN, "[string] ");
+                break;
+        case cJSON_Array:
+                pr_color(FG_LT_CYAN, "[array]  ");
+                break;
+        case cJSON_Object:
+                pr_color(FG_LT_BLUE, "[object] ");
+                break;
+        case cJSON_Raw:
+                pr_color(FG_LT_RED, "[raws]   ");
+                break;
+        case cJSON_True:
+        case cJSON_False:
+                pr_color(FG_YELLOW, "[bool]   ");
+                break;
+        }
 
-        if (!root || !padding)
+        if (node->string)
+                pr_color(FG_LT_YELLOW, "\"%s\" ", node->string);
+
+        switch (node->type) {
+        case cJSON_False:
+                pr_color(FG_RED, ": false");
+                break;
+        case cJSON_True:
+                pr_color(FG_GREEN, ": true");
+                break;
+        case cJSON_Number:
+                pr_color(FG_LT_CYAN, ": %.f", cJSON_GetNumberValue(node));
+                break;
+        case cJSON_String:
+                pr_color(FG_LT_CYAN, ": \"%s\"", cJSON_GetStringValue(node));
+                break;
+        }
+
+        pr_color(FG_LT_WHITE, "\n");
+}
+
+void json_traverse(cJSON *node, uint32_t depth)
+{
+        static char padding[32] = { [0 ... 31] = '\t' };
+        cJSON *child = NULL;
+
+        if (!node)
                 return;
 
-        memset(padding, '\t', 32);
+        pr_color(FG_LT_WHITE, "%.*s", depth, padding);
+        json_traverse_print(node);
 
-        cJSON_ArrayForEach(curr, root) {
-                pr_color(FG_LT_YELLOW, "%.*s", depth, padding);
-
-                pr_color(FG_LT_YELLOW, "[%s] ", curr->string);
-
-                switch (curr->type) {
-                case cJSON_False:
-                        pr_color(FG_RED, ": [false]");
-                        break;
-                case cJSON_True:
-                        pr_color(FG_GREEN, ": [true]");
-                        break;
-                case cJSON_NULL:
-                        pr_color(FG_LT_RED, "[null]");
-                        break;
-                case cJSON_Number:
-                        pr_color(FG_LT_MAGENTA, "[number]");
-                        pr_color(FG_LT_WHITE, " : %.f", cJSON_GetNumberValue(curr));
-                        break;
-                case cJSON_String:
-                        pr_color(FG_LT_GREEN, "[string]");
-                        pr_color(FG_LT_WHITE, " : \"%s\"", cJSON_GetStringValue(curr));
-                        break;
-                case cJSON_Array:
-                        pr_color(FG_LT_CYAN, "[array]");
-                        break;
-                case cJSON_Object:
-                        pr_color(FG_LT_BLUE, "[object]");
-                        break;
-                case cJSON_Raw:
-                        pr_color(FG_LT_RED, "[raws]");
-                        break;
-                }
-
-                pr_color(FG_LT_WHITE, "\n");
-
-                json_traverse(curr, depth + 1);
+        // child = root->child
+        cJSON_ArrayForEach(child, node) {
+                json_traverse(child, depth + 1);
         }
-}
-
-/*
- * json validator
- */
-
-static char *cjson_type_to_str(int type)
-{
-        // return string based on lua's type
-        switch (type) {
-        case cJSON_False:
-        case cJSON_True:
-                return "boolean";
-        case cJSON_NULL:
-                return "null";
-        case cJSON_Number:
-                return "number";
-        case cJSON_String:
-                return "string";
-        case cJSON_Array:
-        case cJSON_Object:
-                return "table";
-        case cJSON_Raw:
-                return "raw";
-        default:
-                return "invalid";
-        }
-
-        return "invalid";
-}
-
-static int json_number_validate(cJSON *c, cJSON *v, cJSON *kval)
-{
-        cJSON *min_j = cJSON_GetObjectItem(kval, "[");
-        cJSON *max_j = cJSON_GetObjectItem(kval, "]");
-        float val = (float)cJSON_GetNumberValue(c);
-
-        if (min_j) {
-                float min = (float)cJSON_GetNumberValue(min_j);
-
-                if (!float_equal(min, val, FLT_EPSILON)) {
-                        if (val < min) {
-                                pr_err("value of key [%s] out of range: %.f < %.f\n",
-                                       v->string, val, min);
-                                return -EINVAL;
-                        }
-                }
-        }
-
-        if (max_j) {
-                float max = (float)cJSON_GetNumberValue(max_j);
-
-                if (!float_equal(max, val, FLT_EPSILON)) {
-                        if (val > max) {
-                                pr_err("value of key [%s] out of range: %.f > %.f\n",
-                                       v->string,val, max);
-                                return -EINVAL;
-                        }
-                }
-        }
-
-        // not supported:
-        //      littler_than
-        //      greater_than
-        //      to_int
-
-        return 0;
-}
-
-static int json_string_validate(cJSON *c, cJSON *v, cJSON *kval)
-{
-        cJSON *i;
-        char *str = cJSON_GetStringValue(c);
-
-        if (!str) {
-                pr_err("failed to get string from key [%s]\n", v->string);
-                return -EINVAL;
-        }
-
-        if (strlen(str) == 0) {
-                if (cJSON_GetObjectItem(v, "allow_empty"))
-                        return 0;
-
-                // fall through
-        }
-
-        cJSON_ArrayForEach(i, kval) {
-                if (!strcmp(str, i->string))
-                        return 0;
-        }
-
-        pr_err("value [%s] of key [%s] is not defined\n", str, v->string);
-
-        return -EINVAL;
-}
-
-static int json_ipaddr_validate(cJSON *c, cJSON *v, cJSON *kval)
-{
-        char *ipstr = cJSON_GetStringValue(c);
-        char *ipver_s = cJSON_GetStringValue(kval);
-        int ipver, any = 0;
-
-        if (!ipstr) {
-                pr_err("failed to get string from key [%s]\n", v->string);
-                return -EINVAL;
-        }
-
-        if (strlen(ipstr) == 0) {
-                if (cJSON_GetObjectItem(v, "allow_empty"))
-                        return 0;
-
-                // fall through
-        }
-
-        if (!strcmp(ipver_s, "ipv4"))
-                ipver = AF_INET;
-        else if (!strcmp(ipver_s, "ipv6"))
-                ipver = AF_INET6;
-        else if (!strcmp(ipver_s, "any"))
-                any = 1;
-        else {
-                pr_err("undefined option [%s] for key [%s]\n", ipver_s, v->string);
-                return -EINVAL;
-        }
-
-        if (any) {
-                int vers[] = { AF_INET, AF_INET6 };
-
-                for (size_t i = 0; i < ARRAY_SIZE(vers); i++)
-                        if (is_valid_ipaddr(ipstr, vers[i]))
-                                return 0;
-
-                pr_err("ip addr [%s] is not either valid ipv4/v6\n", ipstr);
-                return -EINVAL;
-        } else {
-                if (!is_valid_ipaddr(ipstr, ipver)) {
-                        pr_err("ip addr [%s] is not a valid %s\n", ipstr, ipver_s);
-                        return -EINVAL;
-                }
-        }
-
-        return 0;
-}
-
-static int json_ip_array_validate(cJSON *c, cJSON *v, cJSON *kval)
-{
-        cJSON *i;
-        size_t j = 0;
-
-        cJSON_ArrayForEach(i, c) {
-                if (json_ipaddr_validate(i, v, kval)) {
-                        pr_err("[#%zu] of array [%s] failed\n", j, c->string);
-                        return -EINVAL;
-                }
-
-                j++;
-        }
-
-        return 0;
-}
-
-static int json_str_type_validate(cJSON *c, cJSON *v, cJSON *kval)
-{
-        cJSON *str_type_j = cJSON_GetObjectItem(v, "str_type");
-        char *str_type;
-
-        if (!str_type_j) {
-                return json_string_validate(c, v, kval);
-        }
-
-        str_type = cJSON_GetStringValue(str_type_j);
-        if (!strcmp(str_type, "ipaddr")) {
-                if (json_ipaddr_validate(c, v, kval))
-                        return -EINVAL;
-        } else{
-                pr_err("str_type [%s] of key [%s] is not supported\n", str_type, v->string);
-                return -EINVAL;
-        }
-
-        return 0;
-}
-
-static int json_str_array_validate(cJSON *c, cJSON *v, cJSON *kval)
-{
-        cJSON *i;
-        size_t j = 0;
-
-        cJSON_ArrayForEach(i, c) {
-                if (json_string_validate(i, v, kval)) {
-                        pr_err("[#%zu] of array [%s] failed\n", j, c->string);
-                        return -EINVAL;
-                }
-
-                j++;
-        }
-
-        return 0;
-}
-
-static int json_tbl_array_validate(cJSON *c, cJSON *kval)
-{
-        cJSON *i;
-        size_t j = 0;
-
-        cJSON_ArrayForEach(i, c) {
-                if (json_validate(i, kval)) {
-                        pr_err("[#%zu] of array [%s] failed\n", j, c->string);
-                        return -EINVAL;
-                }
-
-                j++;
-        }
-
-        return 0;
-}
-
-static int json_table_validate(cJSON *c, cJSON *v, cJSON *kval)
-{
-        cJSON *tbl_type_j = cJSON_GetObjectItem(v, "tbl_type");
-        char *tbl_type;
-
-        if (!tbl_type_j) {
-                pr_err("tbl_type of key [%s] is not defined\n", c->string);
-                return -EINVAL;
-        }
-
-        tbl_type = cJSON_GetStringValue(tbl_type_j);
-        if (!tbl_type) {
-                pr_err("tbl_type of key [%s] is not a string\n", c->string);
-                return -EINVAL;
-        }
-
-        if (c->type == cJSON_Array) {
-                if (!strcmp(tbl_type, "str_array")) {
-                        if (json_str_array_validate(c, v, kval))
-                                return -EINVAL;
-                } else if (!strcmp(tbl_type, "tbl_array")) {
-                        if (json_tbl_array_validate(c, kval))
-                                return -EINVAL;
-                } else if (!strcmp(tbl_type, "ip_array")) {
-                        if (json_ip_array_validate(c, v, kval))
-                                return -EINVAL;
-                } else {
-                        pr_err("tbl_type [%s] is not supported\n", tbl_type);
-                        return -EINVAL;
-                }
-        }
-
-        if (c->type == cJSON_Object && !strcmp(tbl_type, "table")) {
-                if (json_validate(c, kval))
-                        return -EINVAL;
-        }
-
-        return 0;
-}
-
-int json_validate(cJSON *root, cJSON *verify)
-{
-        cJSON *i, *c;
-
-        if (!root || !verify) {
-                pr_err("@root or @verify == null\n");
-                return 0;
-        }
-
-        cJSON_ArrayForEach(i, verify) {
-                char  *key = i->string;
-                cJSON *key_val;
-                char  *key_type;
-                cJSON *key_type_j;
-
-                if (!key)
-                        continue;
-
-                c = cJSON_GetObjectItem(root, key);
-
-                if (!c) {
-                        if (cJSON_GetObjectItem(i, "optional"))
-                                continue;
-
-                        pr_err("key [%s] is not found\n", key);
-                        return -EINVAL;
-                }
-
-                key_type_j = cJSON_GetObjectItem(i, "key_type");
-                if (!key_type_j) {
-                        pr_err("key_type for key [%s] is not defined\n", key);
-                        return -EINVAL;
-                }
-
-                key_type = cJSON_GetStringValue(key_type_j);
-                if (strcmp(cjson_type_to_str(c->type), key_type)) {
-                        pr_err("type of key [%s] mismatched: %s != %s\n",
-                               key, cjson_type_to_str(c->type), key_type);
-                        return -EINVAL;
-                }
-
-                key_val = cJSON_GetObjectItem(i, "key_value");
-                if (!key_val)
-                        continue;
-
-                switch (c->type) {
-                case cJSON_String:
-                        if (json_str_type_validate(c, i, key_val))
-                                return -EINVAL;
-
-                        break;
-                case cJSON_Number:
-                        if (json_number_validate(c, i, key_val))
-                                return -EINVAL;
-
-                        break;
-                case cJSON_Array:
-                case cJSON_Object:
-                        if (json_table_validate(c, i, key_val))
-                                return -EINVAL;
-
-                        break;
-                default:
-                        return -EINVAL;
-                }
-        }
-
-        return 0;
 }

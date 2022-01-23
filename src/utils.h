@@ -300,24 +300,6 @@ static __always_inline char *buf_get(buf_t *buf)
 // json
 //
 
-/*
- * cJSON_False
- * cJSON_True
- * cJSON_NULL
- * cJSON_Number
- * cJSON_String
- * cJSON_Array
- * cJSON_Object
- * cJSON_Raw
- */
-#define cJSON_Boolean           (cJSON_False | cJSON_True)
-#define cJSON_Compound          (cJSON_Object | cJSON_Array)
-
-static inline int is_cjson_type(uint32_t a, uint32_t b)
-{
-        return a & b;
-}
-
 void json_traverse(cJSON *root, uint32_t depth);
 int json_validate(cJSON *root, cJSON *verify);
 

@@ -1,0 +1,26 @@
+{
+    "sampling_ms": 1000,
+    "profiles": [
+        {
+            "name": "test",
+            "enabled": true,
+            "identity": [
+                {
+                    "type": "process",
+                    "filter": "is",
+                    "value": "sublime_text.exe"
+                }
+            ],
+            "priority": "unchanged",
+            "io_priority": "unchanged",
+            "processor_group": {
+                "node": -1,
+                "scheme": "static"
+            },
+            "thread": {
+                "affinity": "0xffffffffffffffff",
+                "scheme": "static"
+            }
+        }
+    ]
+}

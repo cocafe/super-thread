@@ -38,6 +38,12 @@ set(SOURCE_FILES
     src/tommy_test.c
     src/syshandle.c
     src/syshandle.h
+    src/jkey.c
+    src/jkey.h
+    src/usrcfg.c
+    src/usrcfg.h
+    src/utils.c
+    src/utils.h
     )
 
 set(APPRES_OBJS)

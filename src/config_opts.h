@@ -2,6 +2,7 @@
 #define __JJ_CONFIG_OPTS_H__
 
 #include <stdarg.h>
+#include <getopt.h>
 
 #include "utils.h"
 

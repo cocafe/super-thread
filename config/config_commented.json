@@ -1,0 +1,36 @@
+{
+    "sampling_ms": 1000,
+    "profiles": [
+        {
+            "enabled": true,
+            "identity": [
+                {
+                    "type" : "process",
+                    "filter": "is", // [ is, contain ]
+                    "value": "foobar2000.exe"
+                },
+                {
+                    "type": "file_handle",
+                    "filter": "contains",
+                    "value": "balabala.txt"
+                },
+                {
+                    "type": "cmdline",
+                    "filter": "contains",
+                    "value": "--balabalabala"
+                }
+            ],
+            "priority": "unchanged", // [ rt, high, normal+, normal, normal-, low, idle, unchanged]
+            "io_priority": "unchanged",  // [ high, normal, low, very_low, unchanged]
+            "processor_group": {
+                "node": -1, // -1: cross span all processor groups
+                            // [ 0, 1 ] : specify node
+                "scheme": "static" // [ static, balance, random ]
+            },
+            "thread": {
+                "affinity": "0xffffffffffffffff", // -1 : all processors
+                "scheme": "static" // [ static (by affinity), balance, random ]
+            }
+        }
+    ]
+}
