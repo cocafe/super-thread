@@ -6,6 +6,9 @@
 #include "utils.h"
 
 #define LOG_ALWAYS_FLUSH
+#define LOG_COLOR_ENABLED
+#define LOG_LEVEL_COLORED
+#define LOG_ERR_STREAM          stderr
 
 //
 // ansi color
@@ -141,6 +144,7 @@ int logging_exit(void);
 #define dzlog_warn(...)         do { } while (0)
 #define dzlog_error(...)        do { } while (0)
 #define dzlog_fatal(...)        do { } while (0)
+#define dzlog_notice(...)       do { } while (0)
 #endif
 
 #ifdef LOG_ALWAYS_FLUSH
@@ -284,8 +288,8 @@ int logging_exit(void);
                 if (zlog_inited)                                                \
                         dzlog_error(msg, ##fmt);                                \
                                                                                 \
-                __pr_wrapped(stderr, ERR_COLOR, "%s(): ", __func__);            \
-                __pr_wrapped(stderr, ERR_COLOR, msg, ##fmt);                    \
+                __pr_wrapped(LOG_ERR_STREAM, ERR_COLOR, "%s(): ", __func__);    \
+                __pr_wrapped(LOG_ERR_STREAM, ERR_COLOR, msg, ##fmt);            \
         } while(0)
 
 #define pr_err_once(msg, fmt...)                                                \
@@ -297,8 +301,8 @@ int logging_exit(void);
                 if (zlog_inited)                                                \
                         dzlog_error(msg, ##fmt);                                \
                                                                                 \
-                __pr_wrapped(stderr, ERR_COLOR, "%s(): ", __func__);            \
-                __pr_wrapped(stderr, ERR_COLOR, msg, ##fmt);                    \
+                __pr_wrapped(LOG_ERR_STREAM, ERR_COLOR, "%s(): ", __func__);    \
+                __pr_wrapped(LOG_ERR_STREAM, ERR_COLOR, msg, ##fmt);            \
                 __t = 1;                                                        \
         } while(0)
 
@@ -307,8 +311,8 @@ int logging_exit(void);
                 if (zlog_inited)                                                \
                         dzlog_warn(msg, ##fmt);                                 \
                                                                                 \
-                __pr_wrapped(stderr, WARN_COLOR, "%s(): ", __func__);           \
-                __pr_wrapped(stderr, WARN_COLOR, msg, ##fmt);                   \
+                __pr_wrapped(LOG_ERR_STREAM, WARN_COLOR, "%s(): ", __func__);   \
+                __pr_wrapped(LOG_ERR_STREAM, WARN_COLOR, msg, ##fmt);           \
         } while(0)
 
 #define pr_fatal(msg, fmt...)                                                   \
@@ -316,8 +320,8 @@ int logging_exit(void);
                 if (zlog_inited)                                                \
                         dzlog_fatal(msg, ##fmt);                                \
                                                                                 \
-                __pr_wrapped(stderr, FATAL_COLOR, "%s(): ", __func__);          \
-                __pr_wrapped(stderr, FATAL_COLOR, msg, ##fmt);                  \
+                __pr_wrapped(LOG_ERR_STREAM, FATAL_COLOR, "%s(): ", __func__);  \
+                __pr_wrapped(LOG_ERR_STREAM, FATAL_COLOR, msg, ##fmt);          \
         } while(0)
 
 // debug color:
