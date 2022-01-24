@@ -388,7 +388,7 @@ int buf_backward_discard(buf_t *buf, size_t len)
  * cJSON utils
  */
 
-void json_traverse_print(cJSON *node)
+void json_traverse_do_print(cJSON *node)
 {
         switch (node->type) {
         case cJSON_NULL:
@@ -436,7 +436,7 @@ void json_traverse_print(cJSON *node)
         pr_color(FG_LT_WHITE, "\n");
 }
 
-void json_traverse(cJSON *node, uint32_t depth)
+void json_traverse_print(cJSON *node, uint32_t depth)
 {
         static char padding[32] = { [0 ... 31] = '\t' };
         cJSON *child = NULL;
@@ -445,10 +445,47 @@ void json_traverse(cJSON *node, uint32_t depth)
                 return;
 
         pr_color(FG_LT_WHITE, "%.*s", depth, padding);
-        json_traverse_print(node);
+        json_traverse_do_print(node);
 
         // child = root->child
         cJSON_ArrayForEach(child, node) {
-                json_traverse(child, depth + 1);
+                json_traverse_print(child, depth + 1);
         }
 }
+
+int json_print(const char *json_path)
+{
+        cJSON *root_node;
+        char *text;
+        int err;
+
+        if (!json_path)
+                return -EINVAL;
+
+        if (json_path[0] == '\0') {
+                pr_err("@path is empty\n");
+                return -ENODATA;
+        }
+
+        text = file_read(json_path);
+        if (!text) {
+                pr_err("failed to read file: %s\n", json_path);
+                return -EIO;
+        }
+
+        root_node = cJSON_Parse(text);
+        if (!root_node) {
+                pr_err("cJSON failed to parse text\n");
+                goto free_text;
+        }
+
+        json_traverse_print(root_node, 0);
+
+        cJSON_Delete(root_node);
+
+free_text:
+        free(text);
+
+        return err;
+}
+

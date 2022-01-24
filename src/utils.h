@@ -72,13 +72,19 @@
 //
 
 #ifdef __GNUC__
+#ifndef BITS_PER_LONG
 #define BITS_PER_LONG           (__LONG_WIDTH__)
+#endif
 #define BITS_PER_LONG_LONG      (__LONG_LONG_WIDTH__)
 #endif /* __GNUC__ */
 
 #ifdef __clang__
+#ifndef BITS_PER_LONG
 #define BITS_PER_LONG           (__SIZEOF_LONG__ * __CHAR_BIT__)
+#endif
+#ifndef BITS_PER_LONG_LONG_
 #define BITS_PER_LONG_LONG      (__SIZEOF_LONG_LONG__ * __CHAR_BIT__)
+#endif
 #endif /* __clang__ */
 
 #define BIT(nr)                 (1UL << (nr))
@@ -139,7 +145,6 @@ int float_equal(float a, float b, float epsilon);
 int is_valid_ipaddr(char *ipstr, int ipver);
 char *file_read(const char *path);
 int file_write(const char *path, const void *data, size_t sz);
-int json_validate(cJSON *root, cJSON *verify);
 int __str_cat(char *dest, size_t dest_sz, char *src);
 char *__str_ncpy(char *dest, const char *src, size_t dest_sz);
 int bin_snprintf(char *str, size_t slen, uint64_t val, size_t vsize);
@@ -300,8 +305,8 @@ static __always_inline char *buf_get(buf_t *buf)
 // json
 //
 
-void json_traverse(cJSON *root, uint32_t depth);
-int json_validate(cJSON *root, cJSON *verify);
+int json_print(const char *json_path);
+void json_traverse_print(cJSON *node, uint32_t depth);
 
 //
 // MSVC heap
