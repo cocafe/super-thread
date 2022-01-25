@@ -457,7 +457,7 @@ int json_print(const char *json_path)
 {
         cJSON *root_node;
         char *text;
-        int err;
+        int err = 0;
 
         if (!json_path)
                 return -EINVAL;
@@ -476,6 +476,8 @@ int json_print(const char *json_path)
         root_node = cJSON_Parse(text);
         if (!root_node) {
                 pr_err("cJSON failed to parse text\n");
+                err = -EINVAL;
+
                 goto free_text;
         }
 
