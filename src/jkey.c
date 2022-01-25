@@ -11,7 +11,7 @@
 static uint32_t jkey_to_cjson_type[] = {
         [JKEY_TYPE_UNKNOWN]      = cJSON_Invalid,
         [JKEY_TYPE_OBJECT]       = cJSON_Object,
-        [JKEY_TYPE_ARRAY]        = cJSON_Array,
+        [JKEY_TYPE_RO_ARRAY]     = cJSON_Array,
         [JKEY_TYPE_FIXED_ARRAY]  = cJSON_Array,
         [JKEY_TYPE_GROW_ARRAY]   = cJSON_Array,
         [JKEY_TYPE_LIST_ARRAY]   = cJSON_Array,
@@ -25,11 +25,11 @@ static uint32_t jkey_to_cjson_type[] = {
         [NUM_JKEY_TYPES]         = cJSON_Invalid,
 };
 
-static char *jkey_type_strs[] = {
+char *jkey_type_strs[] = {
         [JKEY_TYPE_UNKNOWN]      = "unknown",
         [JKEY_TYPE_OBJECT]       = "object",
-        [JKEY_TYPE_ARRAY]        = "array",
-        [JKEY_TYPE_FIXED_ARRAY]  = "static_array",
+        [JKEY_TYPE_RO_ARRAY]     = "readonly_array",
+        [JKEY_TYPE_FIXED_ARRAY]  = "fixed_array",
         [JKEY_TYPE_GROW_ARRAY]   = "grow_array",
         [JKEY_TYPE_LIST_ARRAY]   = "list_array",
         [JKEY_TYPE_STRREF]       = "string_ref",
@@ -40,6 +40,12 @@ static char *jkey_type_strs[] = {
         [JKEY_TYPE_UINT]         = "uint",
         [JKEY_TYPE_DOUBLE]       = "double",
 };
+
+static unsigned is_jkey_writable_array(jkey_t *jkey)
+{
+        return is_cjson_type(jkey->cjson_type, cJSON_Array) &&
+               jkey->type != JKEY_TYPE_RO_ARRAY;
+}
 
 static unsigned is_jkey_compound(jkey_t *jkey)
 {
@@ -150,15 +156,15 @@ jkey_t *jbuf_root_key_get(jbuf_t *b)
         return (void *)b->base;
 }
 
-static jkey_t *jkey_array_desc_get(jkey_t *jkey)
+static jkey_t *jkey_array_data_key_get(jkey_t *arr)
 {
-        if (!is_cjson_type(jkey->cjson_type, cJSON_Array))
+        if (!is_cjson_type(arr->cjson_type, cJSON_Array))
                 return NULL;
 
-        if (jkey->child_cnt == 0)
+        if (arr->child_cnt == 0)
                 return NULL;
 
-        return &(((jkey_t *)jkey->child)[0]);
+        return &(((jkey_t *)arr->child)[0]);
 }
 
 static void jkey_strptr_set(jbuf_t *b, void *cookie)
@@ -169,7 +175,7 @@ static void jkey_strptr_set(jbuf_t *b, void *cookie)
         k->data.ref_malloc = 1;
 }
 
-static void jkey_int_base_set(jbuf_t *b, void *cookie, uint8_t int_base)
+void jkey_int_base_set(jbuf_t *b, void *cookie, uint8_t int_base)
 {
         jkey_t *k;
 
@@ -178,13 +184,22 @@ static void jkey_int_base_set(jbuf_t *b, void *cookie, uint8_t int_base)
         k->cjson_type = cJSON_String;
 }
 
-static void jkey_ref_parent_set(jbuf_t *b, void *cookie, ssize_t offset)
+void jkey_ref_parent_set(jbuf_t *b, void *cookie, ssize_t offset)
 {
         jkey_t *k;
 
         k = jbuf_key_get(b, cookie);
-        k->data.offset = offset;
+        k->data.ref_offs = offset;
         k->data.ref_parent = 1;
+}
+
+void jkey_base_ref_parent_set(jbuf_t *b, void *cookie, ssize_t offset)
+{
+        jkey_t *k;
+
+        k = jbuf_key_get(b, cookie);
+        k->obj.base_ref_offs = offset;
+        k->obj.base_ref_parent = 1;
 }
 
 void *jbuf_obj_open(jbuf_t *b, char *key)
@@ -217,10 +232,10 @@ void jbuf_obj_close(jbuf_t *b, void *cookie)
 
 void *jbuf_arr_open(jbuf_t *b, char *key)
 {
-        return jbuf_key_add(b, JKEY_TYPE_ARRAY, key, NULL, 0);
+        return jbuf_key_add(b, JKEY_TYPE_RO_ARRAY, key, NULL, 0);
 }
 
-void *jbuf_static_arr_open(jbuf_t *b, char *key)
+void *jbuf_fixed_arr_open(jbuf_t *b, char *key)
 {
         return jbuf_key_add(b, JKEY_TYPE_FIXED_ARRAY, key, NULL, 0);
 }
@@ -240,114 +255,106 @@ void jbuf_arr_close(jbuf_t *b, void *cookie)
         return jbuf_obj_close(b, cookie);
 }
 
-// fixed array size
-static void *__jbuf_static_arr_desc(jbuf_t *b,
-                                    void *ref,
-                                    size_t arr_cnt,
-                                    size_t ele_sz,
-                                    int ele_type,
-                                    int base_ref_ptr)
+void __jbuf_fixed_arr_setup(jbuf_t *b, void *cookie, void *ref, size_t ele_cnt, size_t ele_sz, int base_ref_ptr)
 {
-        jkey_t *k;
-        void *cookie = jbuf_key_add(b, ele_type, NULL, NULL, ele_sz);
+        jkey_t *k = jbuf_key_get(b, cookie);
 
-        if (!cookie)
-                return NULL;
-
-        k = jbuf_key_get(b, cookie);
-        k->obj.is_arr    = 1;
-        k->obj.arr_cnt   = arr_cnt;
-        k->obj.base_ref  = ref;
-        k->obj.ele_sz    = ele_sz;
+        k->obj.base_ref                 = ref;
+        k->obj.sz                       = ele_sz;
+        k->obj.arr.fixed.ele_cnt        = ele_cnt;
 
         if (base_ref_ptr) {
-                k->obj.base_ref_ptr = 1;
-                k->obj.base_ref_malloc = 1;
+                k->obj.base_ref_ptr     = 1;
+                k->obj.base_ref_malloc  = 1;
         }
-
-        return cookie;
 }
 
-void *jbuf_fixed_arr_desc(jbuf_t *b, int jkey_type, void *ref, size_t arr_cnt, size_t ele_sz)
+void jbuf_fixed_arr_setup(jbuf_t *b, void *cookie, void *ref, size_t ele_cnt, size_t ele_sz)
 {
-        return __jbuf_static_arr_desc(b, ref, arr_cnt, ele_sz, jkey_type, 0);
+        __jbuf_fixed_arr_setup(b, cookie, ref, ele_cnt, ele_sz, 0);
 }
 
-void *jbuf_fixed_arrptr_desc(jbuf_t *b, int jkey_type, void *ref, size_t arr_cnt, size_t ele_sz)
+void jbuf_fixed_arrptr_setup(jbuf_t *b, void *cookie, void **ref, size_t ele_cnt, size_t ele_sz)
 {
-        return __jbuf_static_arr_desc(b, ref, arr_cnt, ele_sz, jkey_type, 1);
+        __jbuf_fixed_arr_setup(b, cookie, ref, ele_cnt, ele_sz, 1);
 }
 
-void *jbuf_fixed_array_strptr_desc(jbuf_t *b, void *ref, size_t arr_sz, size_t ele_sz)
+void jbuf_offset_fixed_arr_setup(jbuf_t *b, void *cookie, ssize_t offset, size_t ele_cnt, size_t ele_sz)
 {
-        void *cookie = __jbuf_static_arr_desc(b, ref, arr_sz, ele_sz, JKEY_TYPE_STRPTR, 0);
-        if (!cookie)
-                return NULL;
-
-        jkey_strptr_set(b, cookie);
-
-        return cookie;
+        __jbuf_fixed_arr_setup(b, cookie, NULL, ele_cnt, ele_sz, 0);
+        jkey_base_ref_parent_set(b, cookie, offset);
 }
 
-// variable array size, can grow
-void *jbuf_grow_arr_desc(jbuf_t *b, int jkey_type, void *ref, size_t ele_sz)
+void jbuf_grow_arr_setup(jbuf_t *b, void *cookie, void **ref, size_t *ext_ele_cnt, size_t ele_sz)
 {
-        jkey_t *k;
-        void *cookie = jbuf_key_add(b, jkey_type, NULL, NULL, ele_sz);
+        jkey_t *k = jbuf_key_get(b, cookie);
 
-        if (!cookie)
-                return NULL;
-
-        k = jbuf_key_get(b, cookie);
-        k->data.ref            = NULL;
-        k->obj.is_arr          = 1;
-        k->obj.base_ref        = ref;
-        k->obj.base_ref_ptr    = 1;
-        k->obj.base_ref_malloc = 1;
-        k->obj.ele_sz          = ele_sz;
-        k->obj.arr_cnt         = 0;
-
-        return cookie;
+        k->data.ref                     = NULL;
+        k->obj.base_ref                 = ref;
+        k->obj.base_ref_ptr             = 1;
+        k->obj.base_ref_malloc          = 1;
+        k->obj.sz                       = ele_sz;
+        k->obj.arr.grow.alloc_cnt       = 0;
+        k->obj.arr.grow.ext_ele_cnt     = ext_ele_cnt;
 }
 
-void *jbuf_strptr_grow_arr_desc(jbuf_t *b, void *ref, size_t ele_sz)
+void jbuf_offset_grow_arr_setup(jbuf_t *b, void *cookie, ssize_t offset, ssize_t ext_ele_cnt_offs, size_t ele_sz)
 {
-        void *cookie = jbuf_grow_arr_desc(b, JKEY_TYPE_STRPTR, ref, ele_sz);
-        if (!cookie)
-                return NULL;
+        jkey_t *k = jbuf_key_get(b, cookie);
 
-        jkey_strptr_set(b, cookie);
+        jbuf_grow_arr_setup(b, cookie, NULL, NULL, ele_sz);
+        jkey_base_ref_parent_set(b, cookie, offset);
 
-        return 0;
+        k->obj.arr.grow.ext_ele_cnt_offs = ext_ele_cnt_offs;
 }
 
-void *jbuf_list_arr_desc(jbuf_t *b,
-                         int jkey_type,
+/**
+ * jbuf_list_arr_setup() - describe list array, open array first
+ *
+ * @param b: jbuf
+ * @param cookie: list array cookie
+ * @param head: pointer to external list_head, the entry point of list
+ * @param ctnr_sz: size of container which holds sub list_head to be allocated
+ * @param offsof_ctnr_head: offset of list_head in container
+ * @param ctnr_data_sz: size of data to write in container, for data key
+ * @param offsof_ctnr_data: offset of data in container to write, for data key
+ */
+void jbuf_list_arr_setup(jbuf_t *b,
+                         void *cookie,
                          struct list_head *head,
-                         size_t container_sz,
-                         ssize_t offsetof_head,
-                         size_t data_sz,
-                         ssize_t offsetof_data)
+                         size_t ctnr_sz,
+                         ssize_t offsof_ctnr_head,
+                         size_t ctnr_data_sz,
+                         ssize_t offsof_ctnr_data)
 {
-        jkey_t *k;
-        void *cookie = jbuf_key_add(b, jkey_type, NULL, NULL, data_sz);
-        if (!cookie)
-                return NULL;
+        jkey_t *k = jbuf_key_get(b, cookie);
 
-        k = jbuf_key_get(b, cookie);
-        k->data.ref             = NULL;
-        k->obj.is_arr           = 1;
-        k->obj.base_ref         = head;
-        k->obj.base_ref_ptr     = 0;
-        k->obj.base_ref_malloc  = 0;
-        k->obj.arr_cnt          = 0;
-        k->obj.ele_sz           = container_sz;
-        k->obj.list_head_offs   = offsetof_head;
-        k->obj.data_ref_offs    = offsetof_data;
+        k->data.ref                     = NULL;
+        k->data.sz                      = ctnr_data_sz;
+        k->obj.base_ref                 = head;
+        k->obj.base_ref_ptr             = 0;
+        k->obj.base_ref_malloc          = 0;
+        k->obj.sz                       = ctnr_sz;
+        k->obj.arr.list.offs_head       = offsof_ctnr_head;
+        k->obj.arr.list.offs_data       = offsof_ctnr_data;
+        k->obj.arr.list.head_inited     = 0;
 
-        INIT_LIST_HEAD(head);
+        if (head) {
+                INIT_LIST_HEAD(head);
+                k->obj.arr.list.head_inited = 1;
+        }
+}
 
-        return cookie;
+void jbuf_offset_list_arr_setup(jbuf_t *b,
+                                void *cookie,
+                                ssize_t offsof_head_in_parent,
+                                size_t ctnr_sz,
+                                ssize_t offsof_ctnr_head,
+                                size_t ctnr_data_sz,
+                                ssize_t offsof_ctnr_data)
+{
+        jbuf_list_arr_setup(b, cookie, NULL, ctnr_sz, offsof_ctnr_head, ctnr_data_sz, offsof_ctnr_data);
+        jkey_base_ref_parent_set(b, cookie, offsof_head_in_parent);
 }
 
 // external ref (read) only char*
@@ -376,7 +383,7 @@ void *jbuf_strptr_add(jbuf_t *b, char *key, char **ref)
         return cookie;
 }
 
-void *jbuf_strval_add(jbuf_t *b, char *key, uint32_t *ref, char **map, size_t map_cnt)
+void *jbuf_strval_add(jbuf_t *b, char *key, uint32_t *ref, char *map[], size_t map_cnt)
 {
         jkey_t *k;
         void *cookie = jbuf_key_add(b, JKEY_TYPE_UINT, key, ref, sizeof(uint32_t));
@@ -431,6 +438,16 @@ void *jbuf_s64_add(jbuf_t *b, char *key, int64_t *ref)
         return jbuf_key_add(b, JKEY_TYPE_INT, key, ref, sizeof(int64_t));
 }
 
+void *jbuf_double_add(jbuf_t *b, char *key, double *ref)
+{
+        return jbuf_key_add(b, JKEY_TYPE_DOUBLE, key, ref, sizeof(double));
+}
+
+void *jbuf_bool_add(jbuf_t *b, char *key, jkey_bool_t *ref)
+{
+        return jbuf_key_add(b, JKEY_TYPE_BOOL, key, ref, sizeof(jkey_bool_t));
+}
+
 void *jbuf_hex_u32_add(jbuf_t *b, char *key, uint32_t *ref)
 {
         void *cookie = jbuf_u32_add(b, key, ref);
@@ -475,28 +492,6 @@ void *jbuf_hex_s64_add(jbuf_t *b, char *key, int64_t *ref)
         return cookie;
 }
 
-void *jbuf_offset_u32_add(jbuf_t *b, char *key, ssize_t offset)
-{
-        void *cookie = jbuf_u32_add(b, key, NULL);
-        if (!cookie)
-                return NULL;
-
-        jkey_ref_parent_set(b, cookie, offset);
-
-        return cookie;
-}
-
-void *jbuf_offset_s32_add(jbuf_t *b, char *key, ssize_t offset)
-{
-        void *cookie = jbuf_s32_add(b, key, NULL);
-        if (!cookie)
-                return NULL;
-
-        jkey_ref_parent_set(b, cookie, offset);
-
-        return cookie;
-}
-
 void *jbuf_offset_strbuf_add(jbuf_t *b, char *key, ssize_t offset, size_t len)
 {
         void *cookie = jbuf_strbuf_add(b, key, NULL, len);
@@ -508,9 +503,9 @@ void *jbuf_offset_strbuf_add(jbuf_t *b, char *key, ssize_t offset, size_t len)
         return cookie;
 }
 
-void *jbuf_offset_strptr_add(jbuf_t *b, char *key, ssize_t offset)
+void *jbuf_offset_strval_add(jbuf_t *b, char *key, ssize_t offset, char *map[], size_t map_cnt)
 {
-        void *cookie = jbuf_strptr_add(b, key, NULL);
+        void *cookie = jbuf_strval_add(b, key, NULL, map, map_cnt);
         if (!cookie)
                 return NULL;
 
@@ -519,27 +514,17 @@ void *jbuf_offset_strptr_add(jbuf_t *b, char *key, ssize_t offset)
         return cookie;
 }
 
-void *jbuf_double_add(jbuf_t *b, char *key, double *ref)
-{
-        return jbuf_key_add(b, JKEY_TYPE_DOUBLE, key, ref, sizeof(double));
-}
-
-void *jbuf_bool_add(jbuf_t *b, char *key, jkey_bool_t *ref)
-{
-        return jbuf_key_add(b, JKEY_TYPE_BOOL, key, ref, sizeof(jkey_bool_t));
-}
-
 static inline void jkey_data_ptr_deref(jkey_t *jkey, void **out, size_t new_sz)
 {
         *out = NULL;
 
-        // @data.ref points to a pointer
-        // @data.ref in array desc key is fixed outside
         if (jkey->data.ref_ptr) {
+                void *data_ref = *(uint8_t **)jkey->data.ref;
+
                 if (NULL == jkey->data.ref)
                         return;
 
-                if (NULL == *(uint8_t **)jkey->data.ref && jkey->data.ref_malloc) {
+                if (NULL == data_ref && jkey->data.ref_malloc) {
                         size_t data_sz = jkey->data.sz;
 
                         if (new_sz)
@@ -548,12 +533,14 @@ static inline void jkey_data_ptr_deref(jkey_t *jkey, void **out, size_t new_sz)
                         if (data_sz == 0)
                                 return;
 
-                        *(uint8_t **)jkey->data.ref = calloc(1, data_sz);
-                        if (NULL == *(uint8_t **)jkey->data.ref)
+                        data_ref = calloc(1, data_sz);
+                        if (NULL == data_ref)
                                 return;
 
                         if (new_sz)
                                 jkey->data.sz = new_sz;
+
+                        *(uint8_t **)jkey->data.ref = data_ref;
                 }
 
                 *out = *(uint8_t **)jkey->data.ref;
@@ -700,7 +687,7 @@ static int jkey_string_write(jkey_t *jkey, cJSON *node)
         case JKEY_TYPE_INT:
         case JKEY_TYPE_UINT:
                 if (jkey->data.int_base) {
-                        int64_t t = strtoll(json_str, NULL, jkey->data.int_base);
+                        uint64_t t = strtoull(json_str, NULL, jkey->data.int_base);
                         return ptr_word_write(dst, jkey->data.sz, t);
                 } else if (jkey->strval.map) {
                         return strval_map_to_int(dst, jkey->data.sz, json_str,
@@ -819,30 +806,35 @@ static int is_jkey_cjson_node_match(jkey_t *jkey, cJSON *node)
         return 1; // matched
 }
 
-static int jkey_array_key_check(jkey_t *jkey)
+static int jkey_array_key_check(jkey_t *arr)
 {
-        if (jkey->type != JKEY_TYPE_FIXED_ARRAY &&
-            jkey->type != JKEY_TYPE_GROW_ARRAY &&
-            jkey->type != JKEY_TYPE_LIST_ARRAY)
+        if (arr->type != JKEY_TYPE_FIXED_ARRAY &&
+            arr->type != JKEY_TYPE_GROW_ARRAY &&
+            arr->type != JKEY_TYPE_LIST_ARRAY)
                 return -ECANCELED;
 
-        if (jkey->child_cnt == 0) {
-                pr_err("array key [%s] does not have any child keys to parse itself\n", jkey->key);
+        if (arr->child_cnt == 0) {
+                pr_err("array key [%s] does not have any child keys to parse itself\n", arr->key);
+                return -EINVAL;
+        }
+
+        if (arr->obj.base_ref == NULL) {
+                pr_notice("array key [%s] did not define data reference\n", arr->key);
+                return -EINVAL;
+        }
+
+        if (arr->obj.sz == 0) {
+                pr_err("array key [%s] element size is 0\n", arr->key);
                 return -EINVAL;
         }
 
         return 0;
 }
 
-static int jkey_array_desc_key_check(jkey_t *arr, jkey_t *desc_key)
+static int jkey_array_data_key_check(jkey_t *arr_key, jkey_t *data_key)
 {
-        if (desc_key->obj.base_ref == NULL) {
-                pr_notice("array key [%s] did not define data reference\n", arr->key);
-                return -EINVAL;
-        }
-
-        if (desc_key->obj.ele_sz == 0) {
-                pr_err("array key [%s] element size is 0\n", arr->key);
+        if (!data_key->data.ref_parent && !data_key->obj.base_ref_parent) {
+                pr_err("array [%s] data key should ref its parent\n", arr_key->key);
                 return -EINVAL;
         }
 
@@ -878,16 +870,16 @@ static int jkey_base_ref_alloc(jkey_t *jkey, size_t base_sz)
         return 0;
 }
 
-static int jkey_static_array_alloc(jkey_t *arr, jkey_t *desc) {
-        int err = 0;
-        size_t base_sz = desc->obj.arr_cnt * desc->obj.ele_sz;
+static int jkey_fixed_array_alloc(jkey_t *arr) {
+        int err;
+        size_t base_sz = arr->obj.arr.fixed.ele_cnt * arr->obj.sz;
 
-        if (!desc->obj.arr_cnt) {
+        if (!arr->obj.arr.fixed.ele_cnt) {
                 pr_err("array [%s] did not define max element cnt\n", arr->key);
                 return -EINVAL;
         }
 
-        err = jkey_base_ref_alloc(desc, base_sz);
+        err = jkey_base_ref_alloc(arr, base_sz);
         if (err == -ENOMEM) {
                 pr_err("array [%s] failed to allocate %zu bytes\n",
                        arr->key, base_sz);
@@ -897,42 +889,51 @@ static int jkey_static_array_alloc(jkey_t *arr, jkey_t *desc) {
         return err;
 }
 
-static int jkey_static_array_ref_update(jkey_t *arr, jkey_t *desc, size_t idx)
+static int jkey_fixed_grow_array_ref_update(jkey_t *arr_key, jkey_t *data_key, size_t idx)
 {
-        size_t idx_offset = desc->obj.ele_sz * idx;
+        size_t idx_offset = arr_key->obj.sz * idx;
+        void *base_ref = arr_key->obj.base_ref;
 
-        if (desc->obj.base_ref_ptr) {
-                void *base_ref = *((uint8_t **)desc->obj.base_ref);
-
-                if (base_ref == NULL) {
-                        pr_dbg("static array [%s] did not init\n", arr->key);
-                        return -ENODATA;
-                }
-
-                desc->data.ref = base_ref + idx_offset;
-
-                return 0;
+        if (0 == arr_key->obj.sz) {
+                pr_err("array [%s] invalid element size\n", arr_key->key);
+                return -EINVAL;
         }
 
-        desc->data.ref = (uint8_t *)desc->obj.base_ref + idx_offset;
+        if (arr_key->obj.base_ref_ptr)
+                base_ref = *((uint8_t **)arr_key->obj.base_ref);
+
+        if (base_ref == NULL) {
+                pr_dbg("array [%s] points to NULL\n", arr_key->key);
+                return -ENODATA;
+        }
+
+        if (data_key->data.ref_parent)
+                data_key->data.ref = base_ref + idx_offset;
+
+        if (data_key->obj.base_ref_parent)
+                data_key->obj.base_ref = base_ref + idx_offset;
 
         return 0;
 }
 
-static int jkey_grow_array_realloc(jkey_t *arr, jkey_t *desc)
+static int jkey_grow_array_realloc(jkey_t *arr, size_t idx)
 {
-        size_t arr_sz = desc->obj.arr_cnt + 1;
-        size_t new_sz = arr_sz * desc->obj.ele_sz;
+        size_t need_alloc = arr->obj.arr.grow.alloc_cnt + JBUF_GROW_ARR_REALLOC_INCR;
+        size_t new_sz = need_alloc * arr->obj.sz;
         void *base_ref, *t;
 
-        if (!desc->obj.base_ref_ptr || !desc->obj.base_ref || !desc->obj.ele_sz) {
+        if (idx < arr->obj.arr.grow.alloc_cnt) {
+                return 0;
+        }
+
+        if (!arr->obj.base_ref_ptr || !arr->obj.base_ref || !arr->obj.sz) {
                 pr_err("invalid grow array [%s]\n", arr->key);
                 return -EINVAL;
         }
 
-        base_ref = *(uint8_t **)desc->obj.base_ref;
+        base_ref = *(uint8_t **)arr->obj.base_ref;
         if (base_ref == NULL) {
-                if (!desc->obj.base_ref_malloc) {
+                if (!arr->obj.base_ref_malloc) {
                         pr_err("array [%s] refer NULL pointer and not do_malloc\n", arr->key);
                         return -EINVAL;
                 }
@@ -943,101 +944,100 @@ static int jkey_grow_array_realloc(jkey_t *arr, jkey_t *desc)
                         return -ENOMEM;
                 }
 
-                *(uint8_t **)desc->obj.base_ref = base_ref;
         } else { // if in management routine, do realloc()
+#ifdef __MINGW64__
+                size_t *extern_ele_cnt = arr->obj.arr.grow.ext_ele_cnt;
+                size_t old_sz = (*extern_ele_cnt) * arr->obj.sz;
+                t = calloc(1, new_sz);
+                if (!t) {
+                        pr_err("array [%s] failed to alloc %zu bytes\n", arr->key, new_sz);
+                        return -ENOMEM;
+                }
+
+                memcpy(t, base_ref, old_sz);
+                free(base_ref);
+#else
                 t = realloc(base_ref, new_sz);
                 if (!t) {
                         pr_err("array [%s] failed to realloc %zu bytes\n", arr->key, new_sz);
                         return -ENOMEM;
                 }
+#endif
 
                 base_ref = t;
-                *(uint8_t **)desc->obj.base_ref = t;
         }
 
-
-        desc->obj.arr_cnt = arr_sz;
+        arr->obj.arr.grow.alloc_cnt = need_alloc;
+        *(uint8_t **)arr->obj.base_ref = base_ref;
 
         return 0;
 }
 
-static int jkey_grow_array_ref_update(jkey_t *arr, jkey_t *desc, size_t idx)
+static int jkey_grow_array_cnt_incr(jkey_t *arr)
 {
-        size_t idx_offset = desc->obj.ele_sz * idx;
-        void *base_ref;
+        size_t *extern_ele_cnt = arr->obj.arr.grow.ext_ele_cnt;
 
-        if (!desc->obj.base_ref || !desc->obj.ele_sz) {
-                pr_err("invalid grow array [%s]\n", arr->key);
+        if (!extern_ele_cnt) {
+                pr_err("grow array key [%s] did not define extern element counter\n", arr->key);
                 return -EINVAL;
         }
 
-        base_ref = *(uint8_t **)desc->obj.base_ref;
-        if (!base_ref) {
-                pr_dbg("grow array [%s] is not inited\n", arr->key);
-                return -ENODATA;
-        }
-
-        desc->data.ref = base_ref + idx_offset;
+        (*extern_ele_cnt)++;
 
         return 0;
 }
 
-static int jkey_list_array_grow(jkey_t *arr, jkey_t *desc)
+static int jkey_list_array_alloc(jkey_t *arr_key, void **container)
 {
-        struct list_head *list_head = desc->obj.base_ref;
-        struct list_head *list_node = NULL;
-        void *container;
+        struct list_head *head = arr_key->obj.base_ref;
+        struct list_head *node = NULL;
+        void *new_ctnr;
 
-        if (!list_head) {
-                pr_err("list array [%s] has NULL list_head\n", arr->key);
+        if (!head) {
+                pr_err("list array [%s] has NULL list_head\n", arr_key->key);
                 return -EINVAL;
         }
 
-        if (desc->obj.ele_sz == 0) {
-                pr_err("list array [%s] container size is 0\n", arr->key);
+        if (!arr_key->obj.arr.list.head_inited) {
+                INIT_LIST_HEAD(head);
+                arr_key->obj.arr.list.head_inited = 1;
+        }
+
+        if (arr_key->obj.sz == 0) {
+                pr_err("list array [%s] container size is 0\n", arr_key->key);
                 return -EINVAL;
         }
 
-        container = calloc(1, desc->obj.ele_sz);
-        if (!container) {
-                pr_err("list array [%s] failed to allocate %zu bytes\n", arr->key, desc->obj.ele_sz);
+        new_ctnr = calloc(1, arr_key->obj.sz);
+        if (!new_ctnr) {
+                pr_err("list array [%s] failed to allocate %zu bytes\n", arr_key->key, arr_key->obj.sz);
                 return -ENOMEM;
         }
 
-        list_node = (void *)((uint8_t *)container + desc->obj.list_head_offs);
-        INIT_LIST_HEAD(list_node);
+        node = (void *)((uint8_t *)new_ctnr + arr_key->obj.arr.list.offs_head);
+        INIT_LIST_HEAD(node);
 
-        list_add_tail(list_node, list_head);
-        desc->obj.arr_cnt++;
+        list_add_tail(node, head);
 
-        desc->data.ref = (uint8_t *)container + desc->obj.data_ref_offs;
+        if (container)
+                *container = new_ctnr;
 
         return 0;
 }
 
-static int jkey_list_ref_update(jkey_t *desc, struct list_head *head)
+static int jkey_list_array_ref_update(jkey_t *arr_key, jkey_t *data_key, void *container)
 {
-        void *container;
+        if (data_key->data.ref_parent)
+                data_key->data.ref = (uint8_t *)container + arr_key->obj.arr.list.offs_data;
 
-        if (!head)
-                return -EINVAL;
-
-        container = (uint8_t *)head - desc->obj.list_head_offs;
-        desc->data.ref = (uint8_t *)container + desc->obj.data_ref_offs;
+        if (data_key->obj.base_ref_parent)
+                data_key->obj.base_ref = (uint8_t *)container + arr_key->obj.arr.list.offs_data;
 
         return 0;
 }
 
 static int jkey_obj_key_ref_update(jkey_t *jkey)
 {
-        int err = 0;
-
-        if (jkey->obj.is_arr)
-                return 0;
-
-        if ((err = jkey_base_ref_alloc(jkey, jkey->data.sz)))
-                return err;
-
         if (jkey->obj.base_ref && jkey->obj.base_ref_ptr)
                 jkey->data.ref = *(uint8_t **)jkey->obj.base_ref;
 
@@ -1045,6 +1045,31 @@ static int jkey_obj_key_ref_update(jkey_t *jkey)
 }
 
 static int jkey_child_key_ref_update(jkey_t *parent)
+{
+        jkey_t *child;
+
+        if (!parent->data.ref)
+                return 0;
+
+        for (size_t i = 0; i < parent->child_cnt; i++) {
+                child = &((jkey_t *)parent->child)[i];
+
+                if (is_jkey_compound(child)) {
+                        if (child->child_cnt)
+                                i += child->child_cnt;
+                }
+
+                if (child->data.ref_parent)
+                        child->data.ref = (uint8_t *)parent->data.ref + child->data.ref_offs;
+
+                if (child->obj.base_ref_parent)
+                        child->obj.base_ref = (uint8_t *)parent->data.ref + child->obj.base_ref_offs;
+        }
+
+        return 0;
+}
+
+static int jkey_child_arr_key_update(jkey_t *parent)
 {
         jkey_t *child;
 
@@ -1056,13 +1081,29 @@ static int jkey_child_key_ref_update(jkey_t *parent)
                                 i += child->child_cnt;
                 }
 
-                if (!child->data.ref_parent)
+                if (!is_jkey_writable_array(child))
                         continue;
 
-                if (parent->data.ref == NULL)
-                        return 0;
+                if (!child->obj.base_ref_parent)
+                        continue;
 
-                child->data.ref = parent->data.ref + child->data.offset;
+                switch (child->type) {
+                case JKEY_TYPE_GROW_ARRAY:
+                {
+                        ssize_t ext_ele_cnt_offs = child->obj.arr.grow.ext_ele_cnt_offs;
+                        child->obj.arr.grow.ext_ele_cnt = parent->data.ref + ext_ele_cnt_offs;
+                        child->obj.arr.grow.alloc_cnt = 0;
+
+                        break;
+                }
+
+                case JKEY_TYPE_LIST_ARRAY:
+                        child->obj.base_ref = NULL;
+                        child->obj.arr.list.head_inited = 0;
+
+                        break;
+
+                }
         }
 
         return 0;
@@ -1153,59 +1194,67 @@ int jkey_cjson_load_recursive(jkey_t *jkey, cJSON *node, int depth)
                 return 0;
 
         if (is_cjson_type(node->type, cJSON_Array)) {
-                jkey_t *desc_key = NULL;
+                jkey_t *arr_key = jkey;
+                jkey_t *data_key = NULL;
                 size_t i = 0;
 
-                if ((err = jkey_array_key_check(jkey)))
+                if ((err = jkey_array_key_check(arr_key)))
                         return err == -ECANCELED ? 0 : err;
 
                 // always take the first child,
                 // since mono-type array is only supported
-                desc_key = &((jkey_t *)jkey->child)[0];
+                data_key = &((jkey_t *)arr_key->child)[0];
 
-                if ((err = jkey_array_desc_key_check(jkey, desc_key)))
+                if ((err = jkey_array_data_key_check(arr_key, data_key)))
                         return err;
 
                 cJSON_ArrayForEach(child_node, node) {
                         cjson_node_print(child_node, depth + 1, &i);
 
-                        if (!is_cjson_type(desc_key->cjson_type, child_node->type)) {
+                        if (!is_cjson_type(data_key->cjson_type, child_node->type)) {
                                 pr_dbg("array [%s] child node #%zu type mismatched, ignored\n", node->string, i);
                                 continue;
                         }
 
-                        if (jkey->type == JKEY_TYPE_FIXED_ARRAY) {
-                                if (i >= desc_key->obj.arr_cnt) {
-                                        pr_dbg("array [%s] input exceeds max element count allocated\n", node->string);
+                        if ((err = jkey_child_arr_key_update(arr_key)))
+                                return err;
+
+                        if (arr_key->type == JKEY_TYPE_FIXED_ARRAY) {
+                                if (i >= arr_key->obj.arr.fixed.ele_cnt) {
+                                        pr_info("array [%s] input exceeds max element count allocated\n", node->string);
                                         break;
                                 }
 
-                                if ((err = jkey_static_array_alloc(jkey, desc_key)))
+                                if ((err = jkey_fixed_array_alloc(arr_key)))
                                         return err;
 
-                                if ((err = jkey_static_array_ref_update(jkey, desc_key, i)))
+                                if ((err = jkey_fixed_grow_array_ref_update(arr_key, data_key, i)))
                                         return err;
-                        } else if (jkey->type == JKEY_TYPE_GROW_ARRAY) {
-                                if ((err = jkey_grow_array_realloc(jkey, desc_key)))
+                        } else if (arr_key->type == JKEY_TYPE_GROW_ARRAY) {
+                                if ((err = jkey_grow_array_realloc(arr_key, i)))
                                         return err;
 
-                                if ((err = jkey_grow_array_ref_update(jkey, desc_key, i)))
+                                if ((err = jkey_grow_array_cnt_incr(arr_key)))
                                         return err;
-                        } else if (jkey->type == JKEY_TYPE_LIST_ARRAY) {
-                                if ((err = jkey_list_array_grow(jkey, desc_key)))
+
+                                if ((err = jkey_fixed_grow_array_ref_update(arr_key, data_key, i)))
                                         return err;
+                        } else if (arr_key->type == JKEY_TYPE_LIST_ARRAY) {
+                                void *container;
+
+                                if ((err = jkey_list_array_alloc(arr_key, &container)))
+                                        return err;
+
+                                jkey_list_array_ref_update(arr_key, data_key, container);
                         }
 
-                        if (is_jkey_compound(desc_key)) {
-                                err = jkey_cjson_load_recursive(desc_key, child_node, depth + 1);
-                                if (err) {
-                                        pr_err("failed to parse #%zu of array [%s]\n", i, node->string);
+                        if (is_jkey_compound(data_key)) {
+                                if ((err = jkey_cjson_load_recursive(data_key, child_node, depth + 1)))
                                         return err;
-                                }
                         } else {
-                                err = jkey_cjson_input(desc_key, child_node);
+                                err = jkey_cjson_input(data_key, child_node);
                                 if (err) {
-                                        pr_err("failed to parse #%zu of array [%s]\n", i, node->string);
+                                        pr_err("failed to parse #%zu item of array [%s]\n", i, node->string);
                                         return err;
                                 }
                         }
@@ -1217,10 +1266,16 @@ int jkey_cjson_load_recursive(jkey_t *jkey, cJSON *node, int depth)
         }
 
         if (is_cjson_type(node->type, cJSON_Object)) {
+                if ((err = jkey_base_ref_alloc(jkey, jkey->data.sz)))
+                        return err;
+
                 if ((err = jkey_obj_key_ref_update(jkey)))
                         return err;
 
                 if ((err = jkey_child_key_ref_update(jkey)))
+                        return err;
+
+                if ((err = jkey_child_arr_key_update(jkey)))
                         return err;
 
                 cJSON_ArrayForEach(child_node, node) {
@@ -1247,8 +1302,9 @@ int jkey_cjson_load_recursive(jkey_t *jkey, cJSON *node, int depth)
                         }
 
                         if (err) {
-                                pr_err_once("stack of key on error:\n");
+                                pr_info_once("stack of key on error:\n");
                                 cjson_node_print(child_node, depth + 1, NULL);
+                                cjson_node_print(node, depth, NULL);
 
                                 return err;
                         }
@@ -1264,46 +1320,38 @@ int jkey_cjson_load(jkey_t *root_key, cJSON *root_node)
         return jkey_cjson_load_recursive(root_key, root_node, 0);
 }
 
-int json_decode(jkey_t *root_key, const char *text)
+int jbuf_load(jbuf_t *buf, const char *json_path)
 {
+        jkey_t *root_key = jbuf_root_key_get(buf);
         cJSON *root_node;
-        int err = 0;
+        char *text;
+        int err;
 
-        if (!text)
-                return -EINVAL;
+        if (!json_path || json_path[0] == '\0') {
+                pr_err("file path is empty\n");
+                return -ENODATA;
+        }
+
+        text = file_read(json_path);
+        if (!text) {
+                pr_err("failed to read file: %s\n", json_path);
+                return -EIO;
+        }
 
         root_node = cJSON_Parse(text);
 
-        pr_raw("--------- JSON TRAVERSE --------\n");
-        json_traverse(root_node, 0);
-        pr_raw("---------  --------\n");
+        if (!root_node) {
+                pr_err("cJSON failed to parse file: %s\n", json_path);
+                err = -EINVAL;
+
+                goto text_free;
+        }
 
         err = jkey_cjson_load(root_key, root_node);
 
         cJSON_Delete(root_node);
 
-        return err;
-}
-
-int json_load(jkey_t *root_key, const char *path)
-{
-        char *text;
-        int err;
-
-        if (!path)
-                return -EINVAL;
-
-        if (path[0] == '\0') {
-                pr_err("@path is empty\n");
-                return -ENODATA;
-        }
-
-        text = file_read(path);
-        if (!text)
-                return -EIO;
-
-        err = json_decode(root_key, text);
-
+text_free:
         free(text);
 
         return err;
@@ -1324,7 +1372,7 @@ int jbuf_traverse_print_pre(jkey_t *jkey, int has_next, int depth)
                 printf("{\n");
                 break;
 
-        case JKEY_TYPE_ARRAY:
+        case JKEY_TYPE_RO_ARRAY:
         case JKEY_TYPE_FIXED_ARRAY:
         case JKEY_TYPE_GROW_ARRAY:
         case JKEY_TYPE_LIST_ARRAY:
@@ -1343,6 +1391,25 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
         static char padding[32] = { [0 ... 31] = '\t' };
         void *ref = NULL;
 
+        if (is_jkey_compound(jkey)) {
+                printf("%.*s", depth, padding);
+
+                switch (jkey->type) {
+                case JKEY_TYPE_OBJECT:
+                        printf("}");
+                        break;
+
+                case JKEY_TYPE_RO_ARRAY:
+                case JKEY_TYPE_FIXED_ARRAY:
+                case JKEY_TYPE_GROW_ARRAY:
+                case JKEY_TYPE_LIST_ARRAY:
+                        printf("]");
+                        break;
+                }
+
+                goto line_ending;
+        }
+
         if (jkey->data.ref) {
                 ref = jkey->data.ref;
 
@@ -1350,51 +1417,46 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
                         ref = *(uint8_t **)jkey->data.ref;
         }
 
+        if (!ref) {
+                printf("null");
+                goto line_ending;
+        }
+
         switch (jkey->type) {
-        case JKEY_TYPE_OBJECT:
-                printf("%.*s", depth, padding);
-                printf("}");
-                break;
-
-        case JKEY_TYPE_ARRAY:
-        case JKEY_TYPE_FIXED_ARRAY:
-        case JKEY_TYPE_GROW_ARRAY:
-        case JKEY_TYPE_LIST_ARRAY:
-                printf("%.*s", depth, padding);
-                printf("]");
-                break;
-
         case JKEY_TYPE_UINT:
         {
                 uint64_t d = 0;
 
+                switch (jkey->data.sz) {
+                case sizeof(uint8_t):
+                        d = *(uint8_t *)ref;
+                        break;
+                case sizeof(uint16_t):
+                        d = *(uint16_t *)ref;
+                        break;
+                case sizeof(uint32_t):
+                        d = *(uint32_t *)ref;
+                        break;
 
-                if (ref) {
-                        switch (jkey->data.sz) {
-                        case sizeof(uint8_t):
-                                d = *(uint8_t *)ref;
-                                break;
-                        case sizeof(uint16_t):
-                                d = *(uint16_t *)ref;
-                                break;
-                        case sizeof(uint32_t):
-                                d = *(uint32_t *)ref;
-                                break;
+                case sizeof(uint64_t):
+                        d = *(uint64_t *)ref;
+                        break;
 
-                        case sizeof(uint64_t):
-                                d = *(uint64_t *)ref;
-                                break;
-
-                        default:
-                                pr_err("does not support for size: %zu\n", jkey->data.sz);
-                                break;
-                        }
+                default:
+                        pr_err("does not support for size: %zu\n", jkey->data.sz);
+                        break;
                 }
 
-                if (jkey->data.int_base == 16)
+                if (jkey->strval.map) {
+                        if (d < jkey->strval.cnt)
+                                printf("\"%s\"", jkey->strval.map[d]);
+                        else
+                                printf("null");
+                } else if (jkey->data.int_base == 16) {
                         printf("\"0x%016jx\"", d);
-                else
+                } else {
                         printf("%ju", d);
+                }
 
                 break;
         }
@@ -1403,27 +1465,24 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
         {
                 int64_t d = 0;
 
+                switch (jkey->data.sz) {
+                case sizeof(int8_t):
+                        d = *(int8_t *)ref;
+                        break;
+                case sizeof(int16_t):
+                        d = *(int16_t *)ref;
+                        break;
+                case sizeof(int32_t):
+                        d = *(int32_t *)ref;
+                        break;
 
-                if (ref) {
-                        switch (jkey->data.sz) {
-                        case sizeof(int8_t):
-                                d = *(int8_t *)ref;
-                                break;
-                        case sizeof(int16_t):
-                                d = *(int16_t *)ref;
-                                break;
-                        case sizeof(int32_t):
-                                d = *(int32_t *)ref;
-                                break;
+                case sizeof(int64_t):
+                        d = *(int64_t *)ref;
+                        break;
 
-                        case sizeof(int64_t):
-                                d = *(int64_t *)ref;
-                                break;
-
-                        default:
-                                pr_err("does not support for size: %zu\n", jkey->data.sz);
-                                break;
-                        }
+                default:
+                        pr_err("does not support for size: %zu\n", jkey->data.sz);
+                        break;
                 }
 
                 if (jkey->data.int_base == 16)
@@ -1436,30 +1495,22 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
 
         case JKEY_TYPE_STRREF:
         case JKEY_TYPE_STRPTR:
-                if (ref)
-                        printf("\"%s\"", (char *)ref);
-                else
-                        printf("\"\"");
+                printf("\"%s\"", (char *)ref);
 
                 break;
 
         case JKEY_TYPE_STRBUF:
-                if (ref)
-                        printf("\"%.*s\"", (int)jkey->data.sz, (char *)ref);
-                else
-                        printf("\"\"");
+                printf("\"%.*s\"", (int)jkey->data.sz, (char *)ref);
 
                 break;
 
         case JKEY_TYPE_BOOL:
-                if (ref)
-                        printf("%s", *(jkey_bool_t *)jkey->data.ref ? "true" : "false");
+                printf("%s", *(jkey_bool_t *)jkey->data.ref ? "true" : "false");
 
                 break;
 
         case JKEY_TYPE_DOUBLE:
-                if (ref)
-                        printf("%.4lf", *(double *)jkey->data.ref);
+                printf("%.4lf", *(double *)jkey->data.ref);
 
                 break;
 
@@ -1468,6 +1519,7 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
                 break;
         }
 
+line_ending:
         if (has_next)
                 printf(",");
 
@@ -1477,13 +1529,13 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
         return 0;
 }
 
-int jbuf_list_array_traverse(jkey_t *jkey,
+int jbuf_list_array_traverse(jkey_t *arr,
                              int (*pre)(jkey_t *, int, int),
                              int (*post)(jkey_t *, int, int),
                              int depth)
 {
-        jkey_t *desc = jkey_array_desc_get(jkey);
-        struct list_head *head = desc->obj.base_ref;
+        jkey_t *data_key = jkey_array_data_key_get(arr);
+        struct list_head *head = arr->obj.base_ref;
         struct list_head *pos, *n;
         int last_one = 0;
         int err = 0;
@@ -1492,66 +1544,68 @@ int jbuf_list_array_traverse(jkey_t *jkey,
                 return -ENODATA;
 
         list_for_each_safe(pos, n, head) {
+                void *container;
+
                 if (pos->next == head)
                         last_one = 1;
 
-                jkey_list_ref_update(desc, pos);
+                container = (uint8_t *)pos - arr->obj.arr.list.offs_head;
 
-                if (is_jkey_compound(desc))
-                        if (desc->data.ref != NULL)
-                                jkey_child_key_ref_update(desc);
+                jkey_list_array_ref_update(arr, data_key, container);
 
-                if ((err = jbuf_traverse_recursive(desc, pre, post, !last_one, depth + 1)))
+                if ((err = jbuf_traverse_recursive(data_key, pre, post, !last_one, depth + 1)))
                         return err;
         }
 
         return err;
 }
 
-int jbuf_fixed_grow_array_traverse(jkey_t *jkey,
+int jbuf_fixed_grow_array_traverse(jkey_t *arr,
                                    int (*pre)(jkey_t *, int, int),
                                    int (*post)(jkey_t *, int, int),
                                    int depth)
 {
-        int (*ref_update)(jkey_t *, jkey_t *, size_t) = NULL;
-        jkey_t *desc = jkey_array_desc_get(jkey);
+        jkey_t *data_key = jkey_array_data_key_get(arr);
+        size_t ele_cnt = 0;
         int last_one = 0;
         int err = 0;
 
-        if (jkey->type == JKEY_TYPE_FIXED_ARRAY)
-                ref_update = jkey_static_array_ref_update;
-        else if (jkey->type == JKEY_TYPE_GROW_ARRAY)
-                ref_update = jkey_grow_array_ref_update;
+        if (arr->type == JKEY_TYPE_FIXED_ARRAY) {
+                ele_cnt = arr->obj.arr.fixed.ele_cnt;
+        } else if (arr->type == JKEY_TYPE_GROW_ARRAY) {
+                size_t *extern_ele_cnt = arr->obj.arr.grow.ext_ele_cnt;
 
-        for (size_t j = 0; j < desc->obj.arr_cnt; j++) {
-                if (j + 1 >= desc->obj.arr_cnt)
+                if (extern_ele_cnt == NULL)
+                        return 0;
+
+                ele_cnt = *extern_ele_cnt;
+        }
+
+        for (size_t j = 0; j < ele_cnt; j++) {
+                if (j + 1 >= ele_cnt)
                         last_one = 1;
 
-                if (ref_update(jkey, desc, j))
+                if (jkey_fixed_grow_array_ref_update(arr, data_key, j))
                         break;
 
-                if (is_jkey_compound(desc))
-                        if (desc->data.ref != NULL)
-                                jkey_child_key_ref_update(desc);
-
-                if ((err = jbuf_traverse_recursive(desc, pre, post, !last_one, depth + 1)))
+                if ((err = jbuf_traverse_recursive(data_key, pre, post, !last_one, depth + 1)))
                         return err;
         }
 
         return err;
 }
 
-int jbuf_array_traverse(jkey_t *jkey,
+int jbuf_array_traverse(jkey_t *arr,
                         int (*pre)(jkey_t *, int, int),
                         int (*post)(jkey_t *, int, int),
                         int depth)
 {
         int err = 0;
 
-        if (jkey->type == JKEY_TYPE_LIST_ARRAY) {
-                err = jbuf_list_array_traverse(jkey, pre, post, depth);
+        if (arr->type == JKEY_TYPE_LIST_ARRAY) {
+                err = jbuf_list_array_traverse(arr, pre, post, depth);
         } else {
-                err = jbuf_fixed_grow_array_traverse(jkey, pre, post, depth);
+                err = jbuf_fixed_grow_array_traverse(arr, pre, post, depth);
         }
 
         return err;
@@ -1578,16 +1632,19 @@ int jbuf_traverse_recursive(jkey_t *jkey,
                 }
 
                 // fixed/grow/list array
-                if (is_cjson_type(jkey->cjson_type, cJSON_Array) && jkey->type != JKEY_TYPE_ARRAY) {
+                if (is_cjson_type(jkey->cjson_type, cJSON_Array) && jkey->type != JKEY_TYPE_RO_ARRAY) {
                         if ((err = jbuf_array_traverse(jkey, pre, post, depth)))
                                 return err;
-                } else { // array/object/data
+                } else { // ro array/object/data
                         int last_one = 0;
 
                         if (i + 1 >= jkey->child_cnt)
                                 last_one = 1;
 
                         if ((err = jkey_child_key_ref_update(jkey)))
+                                return err;
+
+                        if ((err = jkey_child_arr_key_update(jkey)))
                                 return err;
 
                         if ((err = jbuf_traverse_recursive(child, pre, post, !last_one, depth + 1)))
@@ -1645,7 +1702,7 @@ int jkey_ref_free(jkey_t *jkey)
         ref = *(uint8_t **)jkey->data.ref;
 
         if (!ref) {
-                pr_dbg("key [%s] did not allocated data\n", jkey->key);
+//                pr_dbg("key [%s] did not allocated data\n", jkey->key);
                 return 0;
         }
 
@@ -1691,9 +1748,9 @@ int jbuf_traverse_free_pre(jkey_t *jkey, int has_next, int depth)
         return 0;
 }
 
-int jkey_list_array_free(jkey_t *desc)
+int jkey_list_array_free(jkey_t *arr)
 {
-        struct list_head *head = desc->obj.base_ref;
+        struct list_head *head = arr->obj.base_ref;
         struct list_head *pos, *n;
         void *container;
 
@@ -1702,7 +1759,7 @@ int jkey_list_array_free(jkey_t *desc)
 
         list_for_each_safe(pos, n, head) {
                 list_del(pos);
-                container = (uint8_t *)pos - desc->obj.list_head_offs;
+                container = (uint8_t *)pos - arr->obj.arr.list.offs_head;
                 free(container);
         }
 
@@ -1722,22 +1779,15 @@ int jbuf_traverse_free_post(jkey_t *jkey, int has_next, int depth)
         if (is_cjson_type(jkey->cjson_type, cJSON_Object)) {
                 jkey_ref_free(jkey);
                 jkey_base_ref_free(jkey);
-                return 0;
-        }
-
-        if (is_cjson_type(jkey->cjson_type, cJSON_Array)) {
-                jkey_t *desc = jkey_array_desc_get(jkey);
-                if (!desc)
-                        return 0;
-
+        } else if (is_cjson_type(jkey->cjson_type, cJSON_Array)) {
                 switch (jkey->type) {
                 case JKEY_TYPE_GROW_ARRAY:
                 case JKEY_TYPE_FIXED_ARRAY:
-                        jkey_base_ref_free(desc);
+                        jkey_base_ref_free(jkey);
                         break;
 
                 case JKEY_TYPE_LIST_ARRAY:
-                        jkey_list_array_free(desc);
+                        jkey_list_array_free(jkey);
                         break;
                 }
         }
