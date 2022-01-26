@@ -3,6 +3,7 @@
 #ifdef __WINNT__
 #include <fcntl.h>
 #include <windows.h>
+#include <windowsx.h>
 #endif
 
 #include "logging.h"
@@ -51,6 +52,23 @@ void console_stdio_redirect(void)
         freopen_s(&COutputHandle, "CONOUT$", "w", stdout);
         freopen_s(&CErrorHandle, "CONOUT$", "w", stderr);
 }
+
+int mb_printf(const char *title, UINT flags, const char *fmt, ...)
+{
+        char buf[1024] = { 0 };
+        va_list args;
+
+        va_start(args, fmt);
+
+        vsnprintf(buf, sizeof(buf), fmt, args);
+
+        MessageBox(NULL, buf, title, flags);
+
+        va_end(args);
+
+        return 0;
+}
+
 #endif
 
 int logging_init(void)
