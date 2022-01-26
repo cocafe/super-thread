@@ -1,5 +1,5 @@
-#ifndef SUPER_THREAD_USRCFG_H
-#define SUPER_THREAD_USRCFG_H
+#ifndef SUPER_THREAD_CONFIG_H
+#define SUPER_THREAD_CONFIG_H
 
 enum proc_identity_type {
         IDENTITY_NONE = 0,
@@ -78,7 +78,7 @@ struct profile {
         } thread;
 };
 
-struct usrcfg {
+struct config {
         uint32_t sampling_ms;
         struct profile *profiles;
         size_t profile_cnt;
@@ -86,8 +86,8 @@ struct usrcfg {
 
 typedef struct profile profile_t;
 
-extern struct usrcfg g_cfg;
+extern struct config g_cfg;
 
 int usrcfg_test(void);
 
-#endif //SUPER_THREAD_USRCFG_H
+#endif //SUPER_THREAD_CONFIG_H

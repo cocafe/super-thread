@@ -1,10 +1,10 @@
 #include <stdlib.h>
 
 #include "jkey.h"
-#include "usrcfg.h"
+#include "config.h"
 #include "logging.h"
 
-struct usrcfg g_cfg;
+struct config g_cfg;
 
 static char *proc_identity_type_strs[] = {
         [IDENTITY_NONE]                 = "none",
