@@ -321,6 +321,8 @@ static inline void *halloc(size_t sz) { return malloc(sz); };
 static inline void hfree(void *ptr) { free(ptr); };
 #endif
 
+void *realloc_safe(void *old_ptr, size_t old_sz, size_t new_sz);
+
 //
 // iconv utils
 //
