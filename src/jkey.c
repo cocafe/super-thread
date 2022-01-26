@@ -66,12 +66,11 @@ static int jbuf_grow(jbuf_t *b, size_t jk_cnt)
         offset = (uint8_t *)b->head - (uint8_t *)b->base;
         new_sz = b->alloc_sz + (jk_cnt * sizeof(jkey_t));
 
-        t = realloc(b->base, new_sz);
-        if (!t)
+        b->base = realloc_safe(b->base, b->alloc_sz, new_sz);
+        if (!b->base)
                 return -ENOMEM;
 
         b->alloc_sz = new_sz;
-        b->base = t;
         b->head = (uint8_t *)b->base + offset;
         b->end  = (uint8_t *)b->base + b->alloc_sz;
 
@@ -945,26 +944,14 @@ static int jkey_grow_array_realloc(jkey_t *arr, size_t idx)
                 }
 
         } else { // if in management routine, do realloc()
-#ifdef __MINGW64__
                 size_t *extern_ele_cnt = arr->obj.arr.grow.ext_ele_cnt;
                 size_t old_sz = (*extern_ele_cnt) * arr->obj.sz;
-                t = calloc(1, new_sz);
-                if (!t) {
-                        pr_err("array [%s] failed to alloc %zu bytes\n", arr->key, new_sz);
+
+                base_ref = realloc_safe(base_ref, old_sz, new_sz);
+                if (!base_ref) {
+                        pr_err("failed to realloc() array [%s] data\n", arr->key);
                         return -ENOMEM;
                 }
-
-                memcpy(t, base_ref, old_sz);
-                free(base_ref);
-#else
-                t = realloc(base_ref, new_sz);
-                if (!t) {
-                        pr_err("array [%s] failed to realloc %zu bytes\n", arr->key, new_sz);
-                        return -ENOMEM;
-                }
-#endif
-
-                base_ref = t;
         }
 
         arr->obj.arr.grow.alloc_cnt = need_alloc;
