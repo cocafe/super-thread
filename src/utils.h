@@ -321,4 +321,31 @@ static inline void *halloc(size_t sz) { return malloc(sz); };
 static inline void hfree(void *ptr) { free(ptr); };
 #endif
 
+//
+// iconv utils
+//
+
+#define ICONV_UTILS
+
+#ifdef ICONV_UTILS
+
+#include <iconv.h>
+
+#define ICONV_UTF8              "UTF-8"
+#define ICONV_CP936             "CP936"
+
+#ifdef __WINNT__
+#define ICONV_WIN_WCHAR         "UTF-16LE"
+extern int iconv_locale_ok;
+
+char *iconv_locale_cp(void);
+int iconv_winnt_locale_init(void);
+int iconv_locale_to_utf8(char *in, size_t len_in, char *out, size_t out_len);
+#endif // __WINNT__
+
+int iconv_convert(char *in, size_t in_len, const char *from, const char *to, char *out, size_t out_len);
+int iconv_strncmp(char *s1, char *c1, size_t l1, char *s2, char *c2, size_t l2, int *err);
+
+#endif // ICONV_UTILS
+
 #endif //__JJ_UTILS_H__
