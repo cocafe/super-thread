@@ -55,7 +55,6 @@ static unsigned is_jkey_compound(jkey_t *jkey)
 static int jbuf_grow(jbuf_t *b, size_t jk_cnt)
 {
         size_t offset, new_sz;
-        void *t;
 
         if (!b)
                 return -EINVAL;
@@ -919,7 +918,7 @@ static int jkey_grow_array_realloc(jkey_t *arr, size_t idx)
 {
         size_t need_alloc = arr->obj.arr.grow.alloc_cnt + JBUF_GROW_ARR_REALLOC_INCR;
         size_t new_sz = need_alloc * arr->obj.sz;
-        void *base_ref, *t;
+        void *base_ref;
 
         if (idx < arr->obj.arr.grow.alloc_cnt) {
                 return 0;
