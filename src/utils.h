@@ -335,18 +335,37 @@ void *realloc_safe(void *old_ptr, size_t old_sz, size_t new_sz);
 
 #define ICONV_UTF8              "UTF-8"
 #define ICONV_CP936             "CP936"
+#define ICONV_WCHAR             "UTF-16LE"
 
 #ifdef __WINNT__
 #define ICONV_WIN_WCHAR         "UTF-16LE"
+
+#ifdef ICONV_WCHAR
+#undef ICONV_WCHAR
+#define ICONV_WCHAR             ICONV_WIN_WCHAR
+#endif
 extern int iconv_locale_ok;
 
 char *iconv_locale_cp(void);
 int iconv_winnt_locale_init(void);
-int iconv_locale_to_utf8(char *in, size_t len_in, char *out, size_t out_len);
+int iconv_locale_to_utf8(char *in, size_t in_bytes, char *out, size_t out_bytes);
 #endif // __WINNT__
 
-int iconv_convert(char *in, size_t in_len, const char *from, const char *to, char *out, size_t out_len);
+int iconv_convert(void *in, size_t in_bytes, const char *in_encode, const char *out_encode, void *out, size_t out_bytes);
 int iconv_strncmp(char *s1, char *c1, size_t l1, char *s2, char *c2, size_t l2, int *err);
+
+// NOTE:
+//      utf-8 may need more spaces to represent same char than wchar_t (utf-16),
+//      recommended allocating double of char length for utf-8 spaces
+static inline int iconv_wc2utf8(wchar_t *in, size_t in_bytes, char *out, size_t out_bytes)
+{
+        return iconv_convert(in, in_bytes, ICONV_WCHAR, ICONV_UTF8, out, out_bytes);
+}
+
+static inline int iconv_utf82wc(char *in, size_t in_bytes, wchar_t *out, size_t out_bytes)
+{
+        return iconv_convert(in, in_bytes, ICONV_UTF8, ICONV_WCHAR, out, out_bytes);
+}
 
 #endif // ICONV_UTILS
 

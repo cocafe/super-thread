@@ -544,10 +544,10 @@ int iconv_winnt_locale_init(void)
         return 0;
 }
 
-int iconv_locale_to_utf8(char *in, size_t len_in, char *out, size_t out_len)
+int iconv_locale_to_utf8(char *in, size_t in_bytes, char *out, size_t out_bytes)
 {
         if (iconv_locale_ok)
-                return iconv_convert(in, len_in, locale_cp, ICONV_UTF8, out, out_len);
+                return iconv_convert(in, in_bytes, locale_cp, ICONV_UTF8, out, out_bytes);
 
         return -EINVAL;
 }
@@ -562,24 +562,37 @@ char *iconv_locale_cp(void)
 
 #endif
 
-int iconv_convert(char *in, size_t in_len, const char *from, const char *to, char *out, size_t out_len)
+/**
+ * @param in: should be (char *) or (wchar_t *)
+ * @param in_bytes: input bytes, not the string char count (length)
+ * @param in_encode: iconv code page name, e.g "utf8", "gb2312"
+ * @param out_encode: iconv code page name
+ * @param out: can be (char *) or (wchar_t *)
+ * @param out_bytes: bytes that [out] can hold, recommended to allocate more
+ *                   bytes than [in_bytes] for [out].
+ *                   note that, some encodings (e.g. utf-8) may require more
+ *                   spaces than utf-16 to represent some chars (e.g CJK chars),
+ *                   allocate double space of wchar length for utf-8 if not sure.
+ * @return 0 on success
+ */
+int iconv_convert(void *in, size_t in_bytes, const char *in_encode, const char *out_encode, void *out, size_t out_bytes)
 {
         iconv_t cd;
 
-        if (!in || !from || !to || !out || !in_len || !out_len)
+        if (!in || !in_encode || !out_encode || !out || !in_bytes || !out_bytes)
                 return -EINVAL;
 
-        cd = iconv_open(to, from);
+        cd = iconv_open(out_encode, in_encode);
         if (cd == (iconv_t)-1) {
                 if (errno == EINVAL)
-                        pr_err("iconv does not support %s->%s\n", from, to);
+                        pr_err("iconv does not support %s->%s\n", in_encode, out_encode);
                 else
                         pr_err("iconv_open() failed, err = %d\n", errno);
 
                 return -errno;
         }
 
-        iconv(cd, &in, &in_len, &out, &out_len);
+        iconv(cd, (char **)&in, &in_bytes, (char **)&out, &out_bytes);
 
         if (iconv_close(cd) != 0)
                 pr_err("iconv_close() failed\n");
