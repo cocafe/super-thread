@@ -369,4 +369,82 @@ static inline int iconv_utf82wc(char *in, size_t in_bytes, wchar_t *out, size_t 
 
 #endif // ICONV_UTILS
 
+//
+// bit-map helpers
+//
+
+#define small_const_nbits(nbits) \
+	(__builtin_constant_p(nbits) && (nbits) <= BITS_PER_LONG && (nbits) > 0)
+
+/**
+ * __ffs - find first bit in word.
+ * @word: The word to search
+ *
+ * Undefined if no bit exists, so code should check against 0 first.
+ */
+static __always_inline unsigned long __ffs(unsigned long word)
+{
+        int num = 0;
+
+#if __BITS_PER_LONG == 64
+        if ((word & 0xffffffff) == 0) {
+		num += 32;
+		word >>= 32;
+	}
+#endif
+        if ((word & 0xffff) == 0) {
+                num += 16;
+                word >>= 16;
+        }
+        if ((word & 0xff) == 0) {
+                num += 8;
+                word >>= 8;
+        }
+        if ((word & 0xf) == 0) {
+                num += 4;
+                word >>= 4;
+        }
+        if ((word & 0x3) == 0) {
+                num += 2;
+                word >>= 2;
+        }
+        if ((word & 0x1) == 0)
+                num += 1;
+        return num;
+}
+
+/*
+ * Find the first set bit in a memory region.
+ */
+static inline unsigned long _find_first_bit(const unsigned long *addr, unsigned long size)
+{
+        unsigned long idx;
+
+        for (idx = 0; idx * BITS_PER_LONG < size; idx++) {
+                if (addr[idx])
+                        return min(idx * BITS_PER_LONG + __ffs(addr[idx]), size);
+        }
+
+        return size;
+}
+
+/**
+ * find_first_bit - find the first set bit in a memory region
+ * @addr: The address to start the search at
+ * @size: The maximum number of bits to search
+ *
+ * Returns the bit number of the first set bit.
+ * If no bits are set, returns @size.
+ */
+static inline unsigned long find_first_bit(const unsigned long *addr, unsigned long size)
+{
+        if (small_const_nbits(size)) {
+                unsigned long val = *addr & GENMASK(size - 1, 0);
+
+                return val ? __ffs(val) : size;
+        }
+
+        return _find_first_bit(addr, size);
+}
+
 #endif //__JJ_UTILS_H__
