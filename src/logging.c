@@ -4,7 +4,8 @@
 #include <fcntl.h>
 #include <windows.h>
 #include <windowsx.h>
-#endif
+#include <iconv.h>
+#endif // __WINNT__
 
 #include "logging.h"
 
@@ -53,23 +54,82 @@ void console_stdio_redirect(void)
         freopen_s(&CErrorHandle, "CONOUT$", "w", stderr);
 }
 
-int mb_printf(const char *title, UINT flags, const char *fmt, ...)
+void mb_wchar_show(char *title, char *content, size_t len, uint32_t flags)
 {
-        char buf[1024] = { 0 };
-        va_list args;
+        wchar_t wc_title[32] = { 0 };
+        wchar_t *wc_buf;
 
-        va_start(args, fmt);
+        wc_buf = calloc(len + 4, sizeof(wchar_t));
+        if (!wc_buf) {
+                MessageBoxW(NULL, L"ERROR", L"failed to allocate buffer for unicode string", MB_OK);
+                return;
+        }
 
-        vsnprintf(buf, sizeof(buf), fmt, args);
+        if (iconv_utf82wc(title, strlen(title), wc_title, sizeof(wc_title) - sizeof(wchar_t))) {
+                MessageBoxW(NULL, L"ERROR", L"iconv_convert() failed", MB_OK);
+                goto out;
+        }
 
-        MessageBox(NULL, buf, title, flags);
+        if (iconv_utf82wc(content, len * sizeof(char), wc_buf, len * sizeof(wchar_t))) {
+                MessageBoxW(NULL, L"ERROR", L"iconv_convert() failed", MB_OK);
+                goto out;
+        }
 
-        va_end(args);
+        MessageBoxW(NULL, wc_buf, wc_title, flags);
 
-        return 0;
+out:
+        free(wc_buf);
 }
 
+int mb_vprintf(const char *title, uint32_t flags, const char *fmt, va_list arg)
+{
+        va_list arg2;
+        char cbuf;
+        char *sbuf;
+        int len, ret;
+
+        va_copy(arg2, arg);
+        len = vsnprintf(&cbuf, sizeof(cbuf), fmt, arg2);
+        va_end(arg2);
+
+        if (len < 0)
+                return len;
+
+        sbuf = calloc(len + 2, sizeof(char));
+        if (!sbuf)
+                return -ENOMEM;
+
+        ret = vsnprintf(sbuf, len + 1, fmt, arg);
+        if (ret < 0) {
+                MessageBoxA(NULL, NULL, "vsnprintf() failed", MB_OK);
+                goto out;
+        }
+
+#ifdef UNICODE
+        mb_wchar_show((char *)title, sbuf, ret, flags);
+#else
+        MessageBox(NULL, sbuf, title, flags);
 #endif
+
+out:
+        free(sbuf);
+
+        return ret;
+}
+
+int mb_printf(const char *title, uint32_t flags, const char *fmt, ...)
+{
+        va_list ap;
+        int ret;
+
+        va_start(ap, fmt);
+        ret = mb_vprintf(title, flags, fmt, ap);
+        va_end(ap);
+
+        return ret;
+}
+
+#endif // __WINNT__
 
 int logging_init(void)
 {

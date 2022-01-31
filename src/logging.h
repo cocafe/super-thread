@@ -107,6 +107,19 @@ int logging_exit(void);
 // logging macro
 //
 
+#ifdef __WINNT__
+#define TT_INFO                 "INFO"
+#define TT_DEBUG                "DEBUG"
+#define TT_ERROR                "ERROR"
+#define TT_WARNING              "WARNING"
+
+#define MB_MSG_ERR(fmt, ...)    mb_printf(TT_ERROR, MB_ICONERROR | MB_OK, fmt, ##__VA_ARGS__)
+#define MB_MSG_INFO(fmt, ...)   mb_printf(TT_INFO, MB_ICONINFORMATION | MB_OK, fmt, ##__VA_ARGS__)
+
+#define MB_FUNC_ERR()           MB_MSG_ERR("%s:%d %s() failed", __FILE__, __LINE__, __func__)
+
+int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
+#endif // __WINNT__
 
 /*
  * if any '\n' is contained in @msg and @bg is set,
@@ -332,21 +345,5 @@ int logging_exit(void);
 // pr_warn("WARN\n");
 // pr_err("ERROR\n");
 // pr_fatal("FATAL\n");
-
-// TODO: message box stuff
-
-#ifdef __WINNT__
-#define TT_INFO                 "INFO"
-#define TT_DEBUG                "DEBUG"
-#define TT_ERROR                "ERROR"
-#define TT_WARNING              "WARNING"
-
-#define MB_MSG_ERR(fmt, ...)    mb_printf(TT_ERROR, MB_ICONERROR | MB_OK, fmt, ##__VA_ARGS__)
-#define MB_MSG_INFO(fmt, ...)   mb_printf(TT_INFO, MB_ICONINFORMATION | MB_OK, fmt, ##__VA_ARGS__)
-
-#define MB_FUNC_ERR()           MB_MSG_ERR("%s:%d %s() failed", __FILE__, __LINE__, __func__)
-
-int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
-#endif
 
 #endif /* __LOGGING_H__ */
