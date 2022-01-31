@@ -126,7 +126,7 @@ HMENU tray_menu_update(struct tray_menu *m, UINT *id)
                         break;
 
                 if (m->separator) {
-                        InsertMenu(hmenu, *id, MF_SEPARATOR, TRUE, "");
+                        InsertMenu(hmenu, *id, MF_SEPARATOR, TRUE, L"");
                         m->id = *id;
                         continue;
                 }

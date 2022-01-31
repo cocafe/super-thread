@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -137,6 +138,14 @@
                 _a > _b ? _a : _b;              \
         })
 #endif /* __max */
+
+#ifndef max
+#define max(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+
+#ifndef min
+#define min(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 
 #define INET_ADDR_SIZE          (sizeof(struct in6_addr))
 
@@ -433,7 +442,7 @@ static inline unsigned long _find_first_bit(const unsigned long *addr, unsigned 
  * @addr: The address to start the search at
  * @size: The maximum number of bits to search
  *
- * Returns the bit number of the first set bit.
+ * @return the bit number of the first set bit.
  * If no bits are set, returns @size.
  */
 static inline unsigned long find_first_bit(const unsigned long *addr, unsigned long size)

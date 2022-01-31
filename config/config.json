@@ -1,25 +1,56 @@
 {
-    "sampling_ms": 1000,
-    "profiles": [
+    "sampling_ms":1000,
+    "profiles":[
         {
-            "name": "test",
-            "enabled": true,
-            "identity": [
+            "name": "cloudmusic",
+            "enabled":true,
+            "identity":[
                 {
-                    "type": "process",
-                    "filter": "is",
-                    "value": "sublime_text.exe"
+                    "type":"process",
+                    "filter":"is",
+                    "value":"cloudmusic.exe"
                 }
             ],
-            "priority": "unchanged",
-            "io_priority": "unchanged",
-            "processor_group": {
-                "node": -1,
-                "scheme": "static"
-            },
-            "thread": {
-                "affinity": "0xffffffffffffffff",
-                "scheme": "static"
+            "proc_prio":"normal-",
+            "io_prio":"normal",
+            "supervisor":{
+                "granularity":"processes",
+                "processes":{
+                    "node_map":"0x03",
+                    "balance":"round_robin",
+                    "affinity":"0x000000000000f0f0"
+                },
+                "threads":{
+                    "node_map":"0x0f",
+                    "balance":"by_affinity",
+                    "affinity":"0xffffffffffffffff"
+                }
+            }
+        },
+        {
+            "name": "cpu-z",
+            "enabled":true,
+            "identity":[
+                {
+                    "type":"process",
+                    "filter":"is",
+                    "value":"cpuz_x64.exe"
+                }
+            ],
+            "proc_prio":"normal",
+            "io_prio":"normal",
+            "supervisor":{
+                "granularity":"processes",
+                "processes":{
+                    "node_map":"0x01",
+                    "balance":"by_map",
+                    "affinity":"0x000000000ff00000"
+                },
+                "threads":{
+                    "node_map":"0x0f",
+                    "balance":"by_affinity",
+                    "affinity":"0xffffffffffffffff"
+                }
             }
         }
     ]

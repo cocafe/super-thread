@@ -3,6 +3,8 @@
 #include <string.h>
 #include <errno.h>
 #include <math.h>
+#include <wchar.h>
+#include <iconv.h>
 
 #include "list.h"
 #include "jkey.h"
@@ -171,6 +173,12 @@ static void jkey_strptr_set(jbuf_t *b, void *cookie)
         k->data.sz = 0;
         k->data.ref_ptr = 1;
         k->data.ref_malloc = 1;
+}
+
+static void jkey_wchar_set(jbuf_t *b, void *cookie)
+{
+        jkey_t *k = jbuf_key_get(b, cookie);
+        k->data.is_wchar = 1;
 }
 
 void jkey_int_base_set(jbuf_t *b, void *cookie, uint8_t int_base)
@@ -362,9 +370,9 @@ void *jbuf_strref_add(jbuf_t *b, char *key, char *ref)
 }
 
 // external static size char[] buf
-void *jbuf_strbuf_add(jbuf_t *b, char *key, char *ref, size_t len)
+void *jbuf_strbuf_add(jbuf_t *b, char *key, char *ref, size_t bytes)
 {
-        return jbuf_key_add(b, JKEY_TYPE_STRBUF, key, ref, len);
+        return jbuf_key_add(b, JKEY_TYPE_STRBUF, key, ref, bytes);
 }
 
 // alloc internally char* for input
@@ -377,6 +385,30 @@ void *jbuf_strptr_add(jbuf_t *b, char *key, char **ref)
                 return NULL;
 
         jkey_strptr_set(b, cookie);
+
+        return cookie;
+}
+
+void *jbuf_wstrref_add(jbuf_t *b, char *key, wchar_t *ref)
+{
+        void *cookie = jbuf_strref_add(b, key, (void *)ref);
+        jkey_wchar_set(b, cookie);
+
+        return cookie;
+}
+
+void *jbuf_wstrbuf_add(jbuf_t *b, char *key, wchar_t *ref, size_t bytes)
+{
+        void *cookie = jbuf_strbuf_add(b, key, (void *)ref, bytes);
+        jkey_wchar_set(b, cookie);
+
+        return cookie;
+}
+
+void *jbuf_wstrptr_add(jbuf_t *b, char *key, wchar_t **ref)
+{
+        void *cookie = jbuf_strptr_add(b, key, (char **)ref);
+        jkey_wchar_set(b, cookie);
 
         return cookie;
 }
@@ -497,6 +529,14 @@ void *jbuf_offset_strbuf_add(jbuf_t *b, char *key, ssize_t offset, size_t len)
                 return NULL;
 
         jkey_ref_parent_set(b, cookie, offset);
+
+        return cookie;
+}
+
+void *jbuf_offset_wstrbuf_add(jbuf_t *b, char *key, ssize_t offset, size_t len)
+{
+        void *cookie = jbuf_offset_strbuf_add(b, key, offset, len);
+        jkey_wchar_set(b, cookie);
 
         return cookie;
 }
@@ -659,7 +699,7 @@ static inline int jkey_is_strptr(jkey_t *jkey)
 static int jkey_string_write(jkey_t *jkey, cJSON *node)
 {
         char *json_str = cJSON_GetStringValue(node);
-        size_t json_len, copy_len;
+        size_t json_len, alloc_sz = 0;
         void *dst = NULL;
 
         if (!json_str) {
@@ -674,8 +714,17 @@ static int jkey_string_write(jkey_t *jkey, cJSON *node)
                 return 0;
         }
 
-        // + 2 : not always copy precisely
-        jkey_data_ptr_deref(jkey, &dst, jkey_is_strptr(jkey) ? json_len + 2 : 0);
+        // + 2 = not always copy precisely
+        // had better keep extra spaces for wchar_t
+        if (jkey_is_strptr(jkey)) {
+                alloc_sz = json_len + 2;
+
+                if (jkey->data.is_wchar) {
+                        alloc_sz *= sizeof(wchar_t);
+                }
+        }
+
+        jkey_data_ptr_deref(jkey, &dst, alloc_sz);
         if (!dst) {
                 pr_err("data pointer is NULL\n");
                 return -ENODATA;
@@ -698,18 +747,22 @@ static int jkey_string_write(jkey_t *jkey, cJSON *node)
 
                 break;
 
-        case JKEY_TYPE_STRREF:
         case JKEY_TYPE_STRBUF:
         case JKEY_TYPE_STRPTR:
                 if (jkey->data.sz == 0) {
-                        pr_err("key [%s] string data has not allocated\n", jkey->key);
+                        pr_err("key [%s] data size is not inited\n", jkey->key);
                         return -ENODATA;
                 }
 
-                copy_len = __min(jkey->data.sz, json_len);
-                strncpy(dst, json_str, copy_len);
-
-//                pr_verbose("key [%s] copy_len: %zu\n", jkey->key, copy_len);
+                if (jkey->data.is_wchar) {
+                        if (iconv_utf82wc(json_str, json_len, dst, alloc_sz - 2)) {
+                                pr_err("iconv_convert() failed\n");
+                                return -EINVAL;
+                        }
+                } else {
+                        // jkey->data.sz is allocated above, always > json_len
+                        strncpy(dst, json_str, json_len);
+                }
 
                 break;
 
@@ -1376,6 +1429,7 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
 {
         static char padding[32] = { [0 ... 31] = '\t' };
         void *ref = NULL;
+        char *str_utf8 = NULL;
 
         if (is_jkey_compound(jkey)) {
                 printf("%.*s", depth, padding);
@@ -1406,6 +1460,23 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
         if (!ref) {
                 printf("null");
                 goto line_ending;
+        }
+
+        if (jkey->data.is_wchar) {
+                size_t wc_len = wcslen(ref);
+                size_t utf8_bytes = wc_len * 2;
+                str_utf8 = calloc(utf8_bytes, sizeof(char));
+                if (!str_utf8) {
+                        pr_err("failed to allocate %zu bytes\n", utf8_bytes);
+                        return -ENOMEM;
+                }
+
+                if (iconv_wc2utf8(ref, wc_len * sizeof(wchar_t), str_utf8, utf8_bytes)) {
+                        pr_err("iconv_convert() failed\n");
+                        return -EINVAL;
+                }
+
+                ref = str_utf8;
         }
 
         switch (jkey->type) {
@@ -1486,7 +1557,10 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
                 break;
 
         case JKEY_TYPE_STRBUF:
-                printf("\"%.*s\"", (int)jkey->data.sz, (char *)ref);
+                if (jkey->data.is_wchar)
+                        printf("\"%s\"", (char *)ref);
+                else
+                        printf("\"%.*s\"", (int)jkey->data.sz, (char *)ref);
 
                 break;
 
@@ -1504,6 +1578,9 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
                 pr_err("unknown data type: %u\n", jkey->type);
                 break;
         }
+
+        if (str_utf8)
+                free(str_utf8);
 
 line_ending:
         if (has_next)

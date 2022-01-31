@@ -8,10 +8,16 @@ project(${PROJECT_NAME} C)
 
 set(CMAKE_C_STANDARD 11)
 
+set(WIN32_UNICODE true)
+
 if (WIN32 AND MINGW)
         # -mconsole: console subsystem
         # -mwindows: window subsystem
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mwindows -static ")
+
+        if (WIN32_UNICODE)
+                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -municode -DUNICODE -D_UNICODE ")
+        endif()
 endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra ")
@@ -26,7 +32,6 @@ add_subdirectory(tommyds)
 
 set(SOURCE_FILES
     src/main.c
-    src/tray.c
     src/endian.h
     src/logging.c
     src/logging.h
@@ -35,15 +40,15 @@ set(SOURCE_FILES
     src/list.h
     src/config_opts.c
     src/config_opts.h
-    src/tommy_test.c
-    src/syshandle.c
-    src/syshandle.h
     src/jkey.c
     src/jkey.h
-    src/usrcfg.c
-    src/usrcfg.h
+    src/config.c
+    src/config.h
     src/utils.c
     src/utils.h
+    src/supervisor.c
+    src/supervisor.h
+    src/myntapi.h
     )
 
 set(APPRES_OBJS)

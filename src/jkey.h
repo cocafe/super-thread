@@ -47,10 +47,11 @@ struct json_key {
                 ssize_t         ref_offs;               // offset address of parent's ref
                 uint8_t         ref_ptr;                // is @ref pointing to a pointer? (double pointer)
                 uint8_t         ref_parent;             // is @ref referencing parent's @data.ref?
-                // data_key of array actually refs parent,
-                // but this flag is not set for data_key.
+                                                        // data_key of array actually refs parent,
+                                                        // but this flag is not set for data_key.
                 uint8_t         ref_malloc;             // TODO: REMOVE?
                 uint8_t         int_base;
+                uint8_t         is_wchar;
         } data;
 
         struct {
@@ -59,7 +60,7 @@ struct json_key {
                 uint8_t         base_ref_ptr;           // is @base_ref pointing to a pointer?
                 uint8_t         base_ref_malloc;        // TODO: REMOVE?
                 uint8_t         base_ref_parent;        // is @base_ref referencing parent's @data.ref?
-                //                                   ^^^^^^^^^
+                                                        //                                   ^^^^^^^^^
                 size_t          sz;
                 union {
                         struct {
@@ -130,8 +131,11 @@ void *jbuf_bool_add(jbuf_t *b, char *key, jkey_bool_t *ref);
 
 void *jbuf_strval_add(jbuf_t *b, char *key, uint32_t *ref, char *map[], size_t map_cnt);
 void *jbuf_strptr_add(jbuf_t *b, char *key, char **ref);
-void *jbuf_strbuf_add(jbuf_t *b, char *key, char *ref, size_t len);
+void *jbuf_strbuf_add(jbuf_t *b, char *key, char *ref, size_t bytes);
 void *jbuf_strref_add(jbuf_t *b, char *key, char *ref);
+void *jbuf_wstrptr_add(jbuf_t *b, char *key, wchar_t **ref);
+void *jbuf_wstrbuf_add(jbuf_t *b, char *key, wchar_t *ref, size_t bytes);
+void *jbuf_wstrref_add(jbuf_t *b, char *key, wchar_t *ref);
 
 void *jbuf_hex_u32_add(jbuf_t *b, char *key, uint32_t *ref);
 void *jbuf_hex_u64_add(jbuf_t *b, char *key, uint64_t *ref);
@@ -164,6 +168,7 @@ void *jbuf_hex_s64_add(jbuf_t *b, char *key, int64_t *ref);
 #define jbuf_array_obj_data_key(buf, cookie) jbuf_offset_obj_open(buf, cookie, NULL, 0)
 
 void *jbuf_offset_strbuf_add(jbuf_t *b, char *key, ssize_t offset, size_t len);
+void *jbuf_offset_wstrbuf_add(jbuf_t *b, char *key, ssize_t offset, size_t len);
 void *jbuf_offset_strval_add(jbuf_t *b, char *key, ssize_t offset, char *map[], size_t map_cnt);
 
 void jkey_ref_parent_set(jbuf_t *b, void *cookie, ssize_t offset);

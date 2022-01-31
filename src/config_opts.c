@@ -8,8 +8,13 @@
 #include <getopt.h>
 #include <limits.h>
 
+#ifdef UNICODE
+#include <iconv.h>
+#endif
+
 #include "utils.h"
 #include "logging.h"
+#include "config.h"
 #include "config_opts.h"
 
 optdesc_t opt_help = {
@@ -32,9 +37,9 @@ optdesc_t opt_verbose = {
         .long_opt  = "verbose",
         .has_arg   = no_argument,
         .to_set    = 1,
-        .data      = &g_verbose_print,
-        .data_sz   = sizeof(g_verbose_print),
-        .data_def  = &(typeof(g_verbose_print)){ 0 },
+        .data      = &g_logprint_level,
+        .data_sz   = sizeof(g_logprint_level),
+        .data_def  = &(typeof(g_logprint_level)){0 },
         .data_type = D_UNSIGNED,
         .min       = 0,
         .max       = 0,
@@ -63,10 +68,29 @@ optdesc_t opt_console = {
         },
 };
 
+optdesc_t opt_json_path = {
+        .short_opt = 'c',
+        .long_opt  = "config",
+        .has_arg   = required_argument,
+        .to_set    = 0,
+        .data      = g_cfg.json_path,
+        .data_sz   = sizeof(g_cfg.json_path),
+        .data_def  = "config.json",
+        .data_type = D_STRING,
+        .min       = 0,
+        .max       = 0,
+        .parse     = optarg_to_str,
+        .help      = {
+                "JSON config path",
+                NULL,
+        },
+};
+
 optdesc_t *opt_list[] = {
         &opt_help,
         &opt_verbose,
         &opt_console,
+        &opt_json_path,
 };
 
 int optarg_to_int(void *data, char *optarg,
@@ -523,3 +547,37 @@ free_opts:
 out:
         return ret;
 }
+
+#ifdef UNICODE
+int wchar_longopts_parse(int argc, wchar_t *wargv[])
+{
+        char **argv;
+        int ret = 0;
+
+        argv = calloc(argc, sizeof(char *));
+        if (!argv)
+                return -ENOMEM;
+
+        for (int i = 0; i < argc; i++) {
+                char **v = &argv[i];
+                size_t len = wcslen(wargv[i]);
+                *v = calloc(len + 2, sizeof(char));
+                if (!*v)
+                        return -ENOMEM;
+
+                if (iconv_wc2utf8(wargv[i], len * sizeof(wchar_t), *v, len * sizeof(char)))
+                        return -EINVAL;
+        }
+
+        ret = longopts_parse(argc, argv);
+
+        for (int i = 0; i < argc; i++) {
+                if (argv[i])
+                        free(argv[i]);
+        }
+
+        free(argv);
+
+        return ret;
+}
+#endif

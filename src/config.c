@@ -15,39 +15,44 @@ static char *proc_identity_type_strs[] = {
 
 static char *proc_identity_filter_strs[] = {
         [STR_FILTER_IS]                 = "is",
-        [STR_FILTER_CONTAIN]            = "contain",
+        [STR_FILTER_CONTAIN]            = "contains",
 };
 
 static char *proc_prio_strs[] = {
         [PROC_PRIO_UNCHANGED]           = "unchanged",
-        [PROC_PRIO_REALTIME]            = "realtime",
-        [PROC_PRIO_HIGH]                = "high",
-        [PROC_PRIO_ABOVE_NORMAL]        = "normal+",
-        [PROC_PRIO_NORMAL]              = "normal",
-        [PROC_PRIO_BELOW_NORMAL]        = "normal-",
-        [PROC_PRIO_LOW]                 = "low",
         [PROC_PRIO_IDLE]                = "idle",
+        [PROC_PRIO_NORMAL]              = "normal",
+        [PROC_PRIO_HIGH]                = "high",
+        [PROC_PRIO_REALTIME]            = "realtime",
+        [PROC_PRIO_BELOW_NORMAL]        = "normal-",
+        [PROC_PRIO_ABOVE_NORMAL]        = "normal+",
 };
 
 static char *io_prio_strs[] = {
         [IO_PRIO_UNCHANGED]             = "unchanged",
-        [IO_PRIO_HIGH]                  = "high",
-        [IO_PRIO_NORMAL]                = "normal",
-        [IO_PRIO_LOW]                   = "low",
         [IO_PRIO_VERY_LOW]              = "very_low",
+        [IO_PRIO_LOW]                   = "low",
+        [IO_PRIO_NORMAL]                = "normal",
+        [IO_PRIO_HIGH]                  = "high",
 };
 
-static char *proc_grp_scheme_strs[] = {
-        [PROC_GROUP_STATIC]             = "static",
-        [PROC_GROUP_BALANCE]            = "balance",
-        [PROC_GROUP_RANDOM]             = "random",
-        [PROC_GROUP_ROUND_ROBIN]        = "round_robin",
+static char *proc_balance_strs[] = {
+        [PROC_BALANCE_BY_MAP]           = "by_map",
+        [PROC_BALANCE_RAND]             = "random",
+        [PROC_BALANCE_RR]               = "round_robin",
+        [PROC_BALANCE_ONLOAD]           = "onload",
 };
 
-static char *thread_scheme_strs[] = {
-        [THRD_AFFINITY_STATIC]          = "static",
-        [THRD_AFFINITY_BALANCE]         = "balance",
-        [THRD_AFFINITY_RANDOM]          = "random",
+static char *thrd_balance_strs[] = {
+        [THRD_BALANCE_RAND]             = "random",
+        [THRD_BALANCE_NODE_RR]          = "node_rr",
+        [THRD_BALANCE_CPU_RR]           = "cpu_rr",
+        [THRD_BALANCE_ONLOAD]           = "onload",
+};
+
+static char *supervisor_gran_strs[] = {
+        [SUPERVISOR_PROCESSES]          = "processes",
+        [SUPERVISOR_THREADS]            = "threads",
 };
 
 int usrcfg_root_key_create(jbuf_t *b)
@@ -70,43 +75,16 @@ int usrcfg_root_key_create(jbuf_t *b)
         jbuf_u32_add(b, "sampling_ms", &g_cfg.sampling_ms);
 
         {
-                void *arr = jbuf_grow_arr_open(b, "profiles");
-                void *obj;
+                void *profile_arr = jbuf_grow_arr_open(b, "profiles");
+                void *profile_obj;
 
-                jbuf_grow_arr_setup(b, arr, (void *)&g_cfg.profiles, &g_cfg.profile_cnt, sizeof(profile_t));
-                jbuf_offset_obj_open(b, obj, NULL, 0);
+                jbuf_grow_arr_setup(b, profile_arr, (void *)&g_cfg.profiles, &g_cfg.profile_cnt, sizeof(profile_t));
+                jbuf_offset_obj_open(b, profile_obj, NULL, 0);
 
                 jbuf_offset_add(b, strptr, "name", offsetof(profile_t, name));
                 jbuf_offset_add(b, bool, "enabled", offsetof(profile_t, enabled));
                 jbuf_offset_strval_add(b, "proc_prio", offsetof(profile_t, proc_prio), proc_prio_strs, NUM_PROC_PRIOS);
                 jbuf_offset_strval_add(b, "io_prio", offsetof(profile_t, io_prio), io_prio_strs, NUM_IO_PRIOS);
-
-                {
-                        void *proc_grp;
-
-                        jbuf_offset_obj_open(b, proc_grp, "processor_group", 0);
-
-                        jbuf_offset_add(b, s32, "node", (size_t)&(((profile_t *)0)->proc_grp.node));
-                        jbuf_offset_strval_add(b, "scheme",
-                                               (size_t)&(((profile_t *)0)->proc_grp.scheme),
-                                               proc_grp_scheme_strs, NUM_PROC_GRP_SCHEMES);
-
-                        jbuf_obj_close(b, proc_grp);
-                }
-
-                {
-                        void *thrd_obj;
-
-                        jbuf_offset_obj_open(b, thrd_obj, "thread", 0);
-
-                        jbuf_offset_add(b, hex_u64, "affinity",
-                                        (size_t) &(((profile_t *)0)->thread.affinity));
-                        jbuf_offset_strval_add(b, "scheme",
-                                               (size_t) &(((profile_t *)0)->thread.scheme),
-                                               thread_scheme_strs, NUM_THREAD_SCHEMES);
-
-                        jbuf_obj_close(b, thrd_obj);
-                }
 
                 {
                         void *id_arr = jbuf_grow_arr_open(b, "identity");
@@ -122,15 +100,9 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                                 jbuf_offset_obj_open(b, id_obj, NULL, 0);
 
-                                jbuf_offset_strval_add(b, "type",
-                                                       offsetof(struct proc_identity, type),
-                                                       proc_identity_type_strs,
-                                                       NUM_PROC_ID_TYPES);
-                                jbuf_offset_strval_add(b, "filter",
-                                                       offsetof(struct proc_identity, filter),
-                                                       proc_identity_filter_strs,
-                                                       NUM_PROC_ID_STR_FILTERS);
-                                jbuf_offset_add(b, strptr, "value", offsetof(struct proc_identity, value));
+                                jbuf_offset_strval_add(b, "type", offsetof(struct proc_identity, type), proc_identity_type_strs, NUM_PROC_ID_TYPES);
+                                jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), proc_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
+                                jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
 
                                 jbuf_obj_close(b, id_obj);
                         }
@@ -138,11 +110,137 @@ int usrcfg_root_key_create(jbuf_t *b)
                         jbuf_arr_close(b, id_arr);
                 }
 
-                jbuf_obj_close(b, obj);
-                jbuf_arr_close(b, arr);
+                {
+                        void *supervisor_obj;
+
+                        jbuf_offset_obj_open(b, supervisor_obj, "supervisor", 0);
+
+                        jbuf_offset_strval_add(b, "granularity", offsetof(profile_t, granularity), supervisor_gran_strs, NUM_SUPERVISOR_GRANS);
+
+                        {
+                                void *processes_obj;
+
+                                jbuf_offset_obj_open(b, processes_obj, "processes", offsetof(profile_t, processes));
+
+                                jbuf_offset_add(b, hex_u32, "node_map", offsetof(struct supervisor_cfg, node_map));
+                                jbuf_offset_strval_add(b, "balance", offsetof(struct supervisor_cfg, balance), proc_balance_strs, NUM_PROC_BALANCE);
+                                jbuf_offset_add(b, hex_u64, "affinity", offsetof(struct supervisor_cfg, affinity));
+
+                                jbuf_obj_close(b, processes_obj);
+                        }
+
+                        {
+                                void *threads_obj;
+
+                                jbuf_offset_obj_open(b, threads_obj, "threads", offsetof(profile_t, threads));
+
+                                jbuf_offset_add(b, hex_u32, "node_map", offsetof(struct supervisor_cfg, node_map));
+                                jbuf_offset_strval_add(b, "balance", offsetof(struct supervisor_cfg, balance), thrd_balance_strs, NUM_THRD_BALANCE);
+                                jbuf_offset_add(b, hex_u64, "affinity", offsetof(struct supervisor_cfg, affinity));
+
+                                jbuf_obj_close(b, threads_obj);
+                        }
+
+                        jbuf_obj_close(b, supervisor_obj);
+                }
+
+                jbuf_obj_close(b, profile_obj);
+                jbuf_arr_close(b, profile_arr);
         }
 
         jbuf_obj_close(b, root);
+
+        return 0;
+}
+
+static jbuf_t jbuf_usrcfg = { 0 };
+
+int profile_validate(profile_t *profile)
+{
+        if (profile->enabled == 0)
+                pr_info("profile [%s] is disabled\n", profile->name);
+
+        if (profile->granularity == SUPERVISOR_PROCESSES) {
+                profile->processes.node_map &= GENMASK((MAX_PROC_GROUPS - 1), 0);
+
+                switch (profile->processes.balance) {
+                case PROC_BALANCE_BY_MAP:
+                case PROC_BALANCE_RR:
+                        // TODO: validate node_map range, & valided range
+                        if (profile->processes.node_map == 0) {
+                                pr_err("profile [%s] node_map is not set which is needed for by_map\n",
+                                       profile->name);
+                                return -EINVAL;
+                        }
+
+                        // TODO: validate affinity range
+                        if (profile->processes.affinity == 0) {
+                                pr_err("profile [%s] affinity is not set\n", profile->name);
+                                return -EINVAL;
+                        }
+
+                        break;
+
+                case PROC_BALANCE_RAND:
+                        break;
+
+                case PROC_BALANCE_ONLOAD:
+                        pr_info("onload balance algorithm is not implemented\n");
+                        break;
+
+                default:
+                        pr_err("invalid balance mode\n");
+                        return -EINVAL;
+                }
+
+        }
+
+        return 0;
+}
+
+int usrcfg_validate(void)
+{
+        int err;
+
+        if (g_cfg.profile_cnt == 0) {
+                pr_err("did not define any profiles\n");
+                return -ENODATA;
+        }
+
+        for (size_t i = 0; i < g_cfg.profile_cnt; i++) {
+                profile_t *profile = &g_cfg.profiles[i];
+
+                if ((err = profile_validate(profile)))
+                        return err;
+        }
+
+        return 0;
+}
+
+int usrcfg_init(void)
+{
+        jbuf_t *jbuf = &jbuf_usrcfg;
+        int err;
+
+        // TODO: init default config values
+
+        if ((err = usrcfg_root_key_create(jbuf)))
+                return err;
+
+        if ((err = jbuf_load(jbuf, g_cfg.json_path)))
+                return err;
+
+        jbuf_traverse_print(jbuf);
+
+        if ((err = usrcfg_validate()))
+                return err;
+
+        return 0;
+}
+
+int usrcfg_deinit(void)
+{
+        jbuf_deinit(&jbuf_usrcfg);
 
         return 0;
 }

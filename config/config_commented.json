@@ -2,11 +2,12 @@
     "sampling_ms": 1000,
     "profiles": [
         {
+            "name": "name_it",
             "enabled": true,
             "identity": [
                 {
                     "type" : "process",
-                    "filter": "is", // [ is, contain ]
+                    "filter": "is", // [ is, contains ]
                     "value": "foobar2000.exe"
                 },
                 {
@@ -20,16 +21,21 @@
                     "value": "--balabalabala"
                 }
             ],
-            "priority": "unchanged", // [ rt, high, normal+, normal, normal-, low, idle, unchanged]
-            "io_priority": "unchanged",  // [ high, normal, low, very_low, unchanged]
-            "processor_group": {
-                "node": -1, // -1: cross span all processor groups
-                            // [ 0, 1 ] : specify node
-                "scheme": "static" // [ static, balance, random ]
-            },
-            "thread": {
-                "affinity": "0xffffffffffffffff", // -1 : all processors
-                "scheme": "static" // [ static (by affinity), balance, random ]
+            "proc_prio": "unchanged", // [ rt, high, normal+, normal, normal-, low, idle, unchanged ]
+            "io_prio": "unchanged",  // [ high, normal, low, very_low, unchanged ]
+            "supervisor": {
+                "granularity": "processes", // [ proecsses, threads ]
+                "processes": { // schedule base on matched processes
+                    "node_map": "0xf0",  // by_map: only takes first set bit
+                                         // rr: available nodes to do round-robin
+                    "balance": "by_map", // [ by_map, random, round_robin, onload ]
+                    "affinity": "0x00000000000000f0"    // affinity to apply to threads in PID
+                },
+                "threads": { // schedule base on all threads of one matched process
+                    "node_map": "0x0f", // available nodes for selection
+                    "balance": "node_rr", // [ random, node_rr, cpu_rr, onload ]
+                    "affinity": "0xffffffffffffffff" // -1 : all processors
+                }
             }
         }
     ]

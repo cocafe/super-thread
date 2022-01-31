@@ -46,7 +46,6 @@ int handle_type_token_get(SYSTEM_HANDLE_ENTRY *hentry, DWORD pid)
                 }
         }
 
-
 #if 1 // FAST PATH
 
         // return ZERO on failure

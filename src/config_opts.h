@@ -4,6 +4,10 @@
 #include <stdarg.h>
 #include <getopt.h>
 
+#ifdef UNICODE
+#include <iconv.h>
+#endif
+
 #include "utils.h"
 
 // TODO: specify same param multiple times to create multiple things?
@@ -94,5 +98,9 @@ int optarg_to_str(void *data, char *optarg, size_t vargc, ...);
 int optstr_to_int(void *data, char *optarg, size_t vargc, ...);
 
 int longopts_parse(int argc, char *argv[]);
+
+#ifdef UNICODE
+int wchar_longopts_parse(int argc, wchar_t *wargv[]);
+#endif
 
 #endif //__JJ_CONFIG_OPTS_H__
