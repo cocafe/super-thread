@@ -9,7 +9,7 @@
 
 #include "logging.h"
 
-uint32_t g_verbose_print = 1;
+uint32_t g_logprint_level = LOG_LEVEL_DEFAULT;
 
 #ifdef __WINNT__
 

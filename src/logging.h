@@ -9,6 +9,7 @@
 //#define LOG_COLOR_ENABLED
 //#define LOG_LEVEL_COLORED
 #define LOG_ERR_STREAM          stdout
+//#define ZLOG_ENABLED
 
 //
 // ansi color
@@ -65,13 +66,28 @@
 #define BG_LT_CYAN              106
 #define BG_LT_WHITE             107
 
-#define VERBOSE_COLOR           FG_LT_BLACK
-#define DBG_COLOR               FG_LT_GREEN
-#define INFO_COLOR              FG_LT_BLUE
-#define NOTICE_COLOR            FG_LT_CYAN
-#define WARN_COLOR              FG_LT_YELLOW
-#define ERR_COLOR               FG_RED
-#define FATAL_COLOR             FG_LT_RED
+#define LOG_COLOR_VERBOSE       FG_LT_BLACK
+#define LOG_COLOR_DBG           FG_LT_GREEN
+#define LOG_COLOR_INFO          FG_LT_BLUE
+#define LOG_COLOR_NOTICE        FG_LT_CYAN
+#define LOG_COLOR_WARN          FG_LT_YELLOW
+#define LOG_COLOR_ERR           FG_RED
+#define LOG_COLOR_FATAL         FG_LT_RED
+
+#define LOG_LEVEL_VERBOSE       BIT(0)
+#define LOG_LEVEL_DBG           BIT(1)
+#define LOG_LEVEL_INFO          BIT(2)
+#define LOG_LEVEL_NOTICE        BIT(3)
+#define LOG_LEVEL_WARN          BIT(4)
+#define LOG_LEVEL_ERR           BIT(5)
+#define LOG_LEVEL_FATAL         BIT(6)
+
+#define LOG_LEVEL_DEFAULT       (LOG_LEVEL_DBG    | \
+                                 LOG_LEVEL_INFO   | \
+                                 LOG_LEVEL_NOTICE | \
+                                 LOG_LEVEL_WARN   | \
+                                 LOG_LEVEL_ERR    | \
+                                 LOG_LEVEL_FATAL)
 
 //
 // zlog
@@ -86,7 +102,6 @@
 //      fatal
 
 #ifdef ZLOG_ENABLED
-
 #include <zlog.h>
 
 extern uint32_t zlog_inited;
@@ -94,7 +109,7 @@ extern uint32_t zlog_inited;
 #define zlog_inited (0)
 #endif
 
-extern uint32_t g_verbose_print;
+extern uint32_t g_logprint_level;
 
 #ifdef __WINNT__
 extern uint32_t g_console_host_init;
@@ -237,11 +252,11 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_debug(msg, ##fmt);                                \
                                                                                 \
-                if (!g_verbose_print)                                           \
+                if (!(g_logprint_level & LOG_LEVEL_DBG))                        \
                         break;                                                  \
                                                                                 \
-                __pr_wrapped(stdout, DBG_COLOR, "%s(): ", __func__);            \
-                __pr_wrapped(stdout, DBG_COLOR, msg, ##fmt);                    \
+                __pr_wrapped(stdout, LOG_COLOR_DBG, "%s(): ", __func__);        \
+                __pr_wrapped(stdout, LOG_COLOR_DBG, msg, ##fmt);                \
         } while(0)
 
 #define pr_verbose(msg, fmt...)                                                 \
@@ -249,11 +264,11 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_debug(msg, ##fmt);                                \
                                                                                 \
-                if (!g_verbose_print)                                           \
+                if (!(g_logprint_level & LOG_LEVEL_VERBOSE))                    \
                         break;                                                  \
                                                                                 \
-                __pr_wrapped(stdout, VERBOSE_COLOR, "%s(): ", __func__);        \
-                __pr_wrapped(stdout, VERBOSE_COLOR, msg, ##fmt);                \
+                __pr_wrapped(stdout, LOG_COLOR_VERBOSE, "%s(): ", __func__);    \
+                __pr_wrapped(stdout, LOG_COLOR_VERBOSE, msg, ##fmt);            \
         } while(0)
 
 #define pr_info(msg, fmt...)                                                    \
@@ -261,8 +276,11 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_info(msg, ##fmt);                                 \
                                                                                 \
-                __pr_wrapped(stdout, INFO_COLOR, "%s(): ", __func__);           \
-                __pr_wrapped(stdout, INFO_COLOR, msg, ##fmt);                   \
+                if (!(g_logprint_level & LOG_LEVEL_INFO))                       \
+                        break;                                                  \
+                                                                                \
+                __pr_wrapped(stdout, LOG_COLOR_INFO, "%s(): ", __func__);       \
+                __pr_wrapped(stdout, LOG_COLOR_INFO, msg, ##fmt);               \
         } while(0)
 
 #define pr_raw(msg, fmt...)                                                     \
@@ -270,7 +288,7 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_info(msg, ##fmt);                                 \
                                                                                 \
-                __pr_wrapped(stdout, INFO_COLOR, msg, ##fmt);                   \
+                __pr_wrapped(stdout, LOG_COLOR_INFO, msg, ##fmt);               \
         } while(0)
 
 #define pr_info_once(msg, fmt...)                                               \
@@ -282,9 +300,9 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_info(msg, ##fmt);                                 \
                                                                                 \
-                __pr_wrapped(stdout, NOTICE_COLOR, "%s(): ", __func__);         \
-                __pr_wrapped(stdout, NOTICE_COLOR, msg, ##fmt);                 \
-                __t = 1;                                \
+                __pr_wrapped(stdout, LOG_COLOR_NOTICE, "%s(): ", __func__);     \
+                __pr_wrapped(stdout, LOG_COLOR_NOTICE, msg, ##fmt);             \
+                __t = 1;                                                        \
         } while(0)
 
 #define pr_notice(msg, fmt...)                                                  \
@@ -292,8 +310,11 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_notice(msg, ##fmt);                               \
                                                                                 \
-                __pr_wrapped(stdout, NOTICE_COLOR, "%s(): ", __func__);         \
-                __pr_wrapped(stdout, NOTICE_COLOR, msg, ##fmt);                 \
+                if (!(g_logprint_level & LOG_LEVEL_NOTICE))                     \
+                        break;                                                  \
+                                                                                \
+                __pr_wrapped(stdout, LOG_COLOR_NOTICE, "%s(): ", __func__);     \
+                __pr_wrapped(stdout, LOG_COLOR_NOTICE, msg, ##fmt);             \
         } while(0)
 
 #define pr_err(msg, fmt...)                                                     \
@@ -301,8 +322,11 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_error(msg, ##fmt);                                \
                                                                                 \
-                __pr_wrapped(LOG_ERR_STREAM, ERR_COLOR, "%s(): ", __func__);    \
-                __pr_wrapped(LOG_ERR_STREAM, ERR_COLOR, msg, ##fmt);            \
+                if (!(g_logprint_level & LOG_LEVEL_ERR))                        \
+                        break;                                                  \
+                                                                                \
+                __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_ERR, "%s(): ", __func__);\
+                __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_ERR, msg, ##fmt);        \
         } while(0)
 
 #define pr_err_once(msg, fmt...)                                                \
@@ -314,8 +338,8 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_error(msg, ##fmt);                                \
                                                                                 \
-                __pr_wrapped(LOG_ERR_STREAM, ERR_COLOR, "%s(): ", __func__);    \
-                __pr_wrapped(LOG_ERR_STREAM, ERR_COLOR, msg, ##fmt);            \
+                __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_ERR, "%s(): ", __func__);\
+                __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_ERR, msg, ##fmt);        \
                 __t = 1;                                                        \
         } while(0)
 
@@ -324,8 +348,11 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_warn(msg, ##fmt);                                 \
                                                                                 \
-                __pr_wrapped(LOG_ERR_STREAM, WARN_COLOR, "%s(): ", __func__);   \
-                __pr_wrapped(LOG_ERR_STREAM, WARN_COLOR, msg, ##fmt);           \
+                if (!(g_logprint_level & LOG_LEVEL_WARN))                       \
+                        break;                                                  \
+                                                                                \
+                __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_WARN, "%s(): ", __func__);   \
+                __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_WARN, msg, ##fmt);           \
         } while(0)
 
 #define pr_fatal(msg, fmt...)                                                   \
@@ -333,8 +360,11 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_fatal(msg, ##fmt);                                \
                                                                                 \
-                __pr_wrapped(LOG_ERR_STREAM, FATAL_COLOR, "%s(): ", __func__);  \
-                __pr_wrapped(LOG_ERR_STREAM, FATAL_COLOR, msg, ##fmt);          \
+                if (!(g_logprint_level & LOG_LEVEL_FATAL))                      \
+                        break;                                                  \
+                                                                                \
+                __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_FATAL, "%s(): ", __func__);  \
+                __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_FATAL, msg, ##fmt);          \
         } while(0)
 
 // debug color:
