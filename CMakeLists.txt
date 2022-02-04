@@ -49,6 +49,8 @@ set(SOURCE_FILES
     src/supervisor.c
     src/supervisor.h
     src/myntapi.h
+    src/sysinfo.c
+    src/sysinfo.h
     )
 
 set(APPRES_OBJS)

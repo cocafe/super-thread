@@ -18,122 +18,9 @@
 #include "utils.h"
 #include "config.h"
 #include "logging.h"
+#include "sysinfo.h"
 #include "supervisor.h"
 #include "config_opts.h"
-
-void processor_group_test(void)
-{
-        int nr_grps = GetActiveProcessorGroupCount();
-        if (nr_grps < 1) {
-                pr_info("no processor group\n");
-                return;
-        }
-
-        pr_info("has %d processor groups\n", nr_grps);
-
-        for (int i = 0; i < nr_grps; i++) {
-                pr_info("group %d has %lu processors\n", i, GetMaximumProcessorCount(i));
-        }
-}
-
-#include <sysinfoapi.h>
-
-void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
-{
-        union {
-                PPROCESSOR_RELATIONSHIP Processor;
-                PNUMA_NODE_RELATIONSHIP NumaNode;
-                PCACHE_RELATIONSHIP Cache;
-                PGROUP_RELATIONSHIP Group;
-        } u;
-
-        u.Processor = &pslpi->Processor;
-
-        switch (pslpi->Relationship) {
-        case RelationProcessorPackage:
-                pr_info("RelationProcessorPackage(GroupCount = %u)\n", u.Processor->GroupCount);
-
-                WORD GroupCount;
-                if ((GroupCount = u.Processor->GroupCount))
-                {
-                        PGROUP_AFFINITY GroupMask = u.Processor->GroupMask;
-                        do
-                        {
-                                pr_info("group<%u> Mask = %016llx\n", GroupMask->Group, GroupMask->Mask);
-                        } while (GroupMask++, --GroupCount);
-                }
-                break;
-
-        case RelationProcessorCore:
-                pr_info("RelationProcessorCore(%x): Mask = %016llx\n", u.Processor->Flags, u.Processor->GroupMask->Mask);
-                break;
-
-        case RelationGroup:
-                pr_info("RelationGroup(%u/%u)\n", u.Group->ActiveGroupCount, u.Group->MaximumGroupCount);
-
-                WORD ActiveGroupCount;
-                if ((ActiveGroupCount = u.Group->ActiveGroupCount))
-                {
-                        PPROCESSOR_GROUP_INFO GroupInfo = u.Group->GroupInfo;
-                        do
-                        {
-                                pr_info("<%d/%d %016llx>\n",
-                                         GroupInfo->ActiveProcessorCount,
-                                         GroupInfo->MaximumProcessorCount,
-                                         GroupInfo->ActiveProcessorMask);
-                        } while (GroupInfo++, --ActiveGroupCount);
-                }
-                break;
-
-        case RelationCache:
-                pr_info("Cache L%d (%x, %lx) %x\n", u.Cache->Level, u.Cache->LineSize, u.Cache->CacheSize, u.Cache->Type);
-                break;
-
-        case RelationNumaNode:
-                pr_info("NumaNode<%lu> (group = %d, mask = %016llx)\n", u.NumaNode->NodeNumber, u.NumaNode->GroupMask.Group, u.NumaNode->GroupMask.Mask);
-                break;
-
-        default:
-                pr_info("unknown Relationship=%x\n", pslpi->Relationship);
-        }
-}
-
-void processor_topology_test()
-{
-        DWORD sz = 0, info_sz, err;
-        BOOL ok;
-        void *buf, *__buf;
-
-
-        GetLogicalProcessorInformationEx(RelationAll, NULL, &sz);
-        if ((err = GetLastError()) != ERROR_INSUFFICIENT_BUFFER) {
-                pr_err("GetLogicalProcessorInformationEx() failed, err = %lu\n", err);
-                return;
-        }
-
-        __buf = calloc(1, sz);
-        if (!__buf) {
-                pr_err("failed to allocate %lu bytes\n", sz);
-                return;
-        }
-
-        buf = __buf;
-
-        ok = GetLogicalProcessorInformationEx(RelationAll, buf, &sz);
-        if (!ok || !sz) {
-                pr_err("GetLogicalProcessorInformationEx() failed, err = %lu\n", (err = GetLastError()));
-                goto out;
-        }
-
-        do {
-                DumpLPI(buf);
-                info_sz = ((SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *) buf)->Size;
-                buf = (uint8_t *)buf + info_sz;
-        } while (sz -= info_sz);
-
-out:
-        free(__buf);
-}
 
 static int __privilege_get(const wchar_t *priv_name)
 {
@@ -205,6 +92,8 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 goto exit_logging;
         }
 
+        sysinfo_init(&g_sys_info);
+
         {
 //                HWND console_wnd = GetConsoleWindow();
 //                ShowWindow(console_wnd, SW_HIDE);
@@ -215,7 +104,7 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         if ((err = usrcfg_init())) {
                 MB_MSG_ERR("failed to load config: \"%s\"", g_cfg.json_path);
-                goto exit_logging;
+                goto exit_sysinfo;
         }
 
         MB_MSG_INFO("PRESS TO START");
@@ -234,6 +123,9 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         }
 
         usrcfg_deinit();
+
+exit_sysinfo:
+        sysinfo_deinit(&g_sys_info);
 
 exit_logging:
         logging_exit();
