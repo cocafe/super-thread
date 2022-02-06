@@ -51,7 +51,7 @@ static char *thrd_balance_strs[] = {
         [THRD_BALANCE_ONLOAD]           = "onload",
 };
 
-static char *supervisor_gran_strs[] = {
+static char *supervisor_mode_strs[] = {
         [SUPERVISOR_PROCESSES]          = "processes",
         [SUPERVISOR_THREADS]            = "threads",
 };
@@ -116,7 +116,7 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                         jbuf_offset_obj_open(b, supervisor_obj, "supervisor", 0);
 
-                        jbuf_offset_strval_add(b, "granularity", offsetof(profile_t, granularity), supervisor_gran_strs, NUM_SUPERVISOR_GRANS);
+                        jbuf_offset_strval_add(b, "mode", offsetof(profile_t, sched_mode), supervisor_mode_strs, NUM_SUPERVISOR_GRANS);
                         jbuf_offset_add(b, bool, "oneshot", offsetof(profile_t, oneshot));
 
                         {
@@ -165,7 +165,7 @@ int profile_validate(profile_t *profile)
         if (profile->enabled == 0)
                 pr_info("profile [%s] is disabled\n", profile->name);
 
-        if (profile->granularity == SUPERVISOR_PROCESSES) {
+        if (profile->sched_mode == SUPERVISOR_PROCESSES) {
                 profile->processes.node_map &= avail_node_map;
 
                 switch (profile->processes.balance) {
@@ -196,7 +196,7 @@ int profile_validate(profile_t *profile)
                         return -EINVAL;
                 }
 
-        } else if (profile->granularity == SUPERVISOR_THREADS) {
+        } else if (profile->sched_mode == SUPERVISOR_THREADS) {
                 profile->threads.node_map &= avail_node_map;
         }
 

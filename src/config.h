@@ -77,20 +77,20 @@ struct supervisor_cfg {
 };
 
 struct profile {
-        char *name;
+        char                   *name;
 
-        uint32_t enabled;
+        uint32_t                enabled;
 
-        uint32_t proc_prio;
-        uint32_t io_prio;
+        uint32_t                proc_prio;
+        uint32_t                io_prio;
 
-        struct proc_identity *id;
-        size_t id_cnt;
+        struct proc_identity   *id;
+        size_t                  id_cnt;
 
-        uint32_t granularity;
-        uint32_t oneshot;
-        struct supervisor_cfg processes;
-        struct supervisor_cfg threads;
+        uint32_t                sched_mode;
+        uint32_t                oneshot;
+        struct supervisor_cfg   processes;
+        struct supervisor_cfg   threads;
 };
 
 struct config {

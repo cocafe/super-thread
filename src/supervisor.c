@@ -55,7 +55,7 @@ void proc_entry_init(proc_entry_t *entry, PROCESSENTRY32 *pe32, size_t profile_i
         info->pid = pe32->th32ProcessID;
         wcsncpy(info->name, pe32->szExeFile, wcslen(pe32->szExeFile));
 
-        if (g_cfg.profiles[profile_idx].granularity == SUPERVISOR_THREADS)
+        if (g_cfg.profiles[profile_idx].sched_mode == SUPERVISOR_THREADS)
                 tommy_hashtable_init(&entry->threads, THRD_HASH_TBL_BUCKET);
 }
 
@@ -67,7 +67,7 @@ void proc_threads_tbl_free(void *data)
 
 void proc_entry_free(proc_entry_t *entry)
 {
-        if (g_cfg.profiles[entry->profile_idx].granularity == SUPERVISOR_THREADS){
+        if (g_cfg.profiles[entry->profile_idx].sched_mode == SUPERVISOR_THREADS){
                 tommy_hashtable_foreach(&entry->threads, proc_threads_tbl_free);
                 tommy_hashtable_done(&entry->threads);
         }
@@ -1074,8 +1074,8 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entr
                         }
                 }
 
-                pr_info("[pid: %5zu \"%ls\"] set [group %hu affinity 0x%016jx]\n",
-                        info->pid, info->name, new_aff->Group, new_aff->Mask);
+                pr_raw("[pid: %5zu \"%ls\"] set [group %hu affinity 0x%016jx]\n",
+                       info->pid, info->name, new_aff->Group, new_aff->Mask);
                 err = proc_group_affinity_set(process, new_aff);
         } else {
                 struct thrd_aff_set_data data = {
@@ -1419,7 +1419,7 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         if ((err = profile_prio_ioprio_set(profile, process)))
                 goto out;
 
-        switch (profile->granularity) {
+        switch (profile->sched_mode) {
         case SUPERVISOR_PROCESSES:
                 err = supervisor_processes_sched(sv, entry, process);
                 break;
