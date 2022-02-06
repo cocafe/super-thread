@@ -47,7 +47,7 @@ struct proc_entry {
         GROUP_AFFINITY  last_aff;
 
         uint8_t         is_new;
-
+        uint8_t         oneshot;
 };
 
 struct procs_sched {

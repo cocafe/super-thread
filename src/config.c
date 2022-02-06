@@ -117,6 +117,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                         jbuf_offset_obj_open(b, supervisor_obj, "supervisor", 0);
 
                         jbuf_offset_strval_add(b, "granularity", offsetof(profile_t, granularity), supervisor_gran_strs, NUM_SUPERVISOR_GRANS);
+                        jbuf_offset_add(b, bool, "oneshot", offsetof(profile_t, oneshot));
 
                         {
                                 void *processes_obj;

@@ -1042,8 +1042,8 @@ static int process_sched_thread_affinity_set(DWORD tid, void *data)
                 goto out;
         }
 
-        pr_raw("set [group: %2hu affinity: 0x%016jx] for [tid: %5lu pid: %5zu \"%ls\"] \n",
-               new_aff->Group, new_aff->Mask, tid, pid, proc_name);
+        pr_raw("[tid: %5lu pid: %5zu \"%ls\"] set [group: %2hu affinity: 0x%016jx]\n",
+               tid, pid, proc_name, new_aff->Group, new_aff->Mask);
 
         if (0 == SetThreadGroupAffinity(thread, new_aff, NULL)) {
                 pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
@@ -1074,8 +1074,8 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entr
                         }
                 }
 
-                pr_info("set [group %hu affinity 0x%016jx] for [pid: %5zu \"%ls\"] \n",
-                        new_aff->Group, new_aff->Mask, info->pid, info->name);
+                pr_info("[pid: %5zu \"%ls\"] set [group %hu affinity 0x%016jx]\n",
+                        info->pid, info->name, new_aff->Group, new_aff->Mask);
                 err = proc_group_affinity_set(process, new_aff);
         } else {
                 struct thrd_aff_set_data data = {
@@ -1108,7 +1108,7 @@ static int processes_sched_by_map(supervisor_t *sv, proc_entry_t *entry, HANDLE 
 
 static unsigned long node_map_next(unsigned long curr, unsigned long mask)
 {
-        unsigned long supported_mask = GENMASK((MAX_PROC_GROUPS - 1), 0);
+        unsigned long supported_mask = NODE_MAP_SUPPORT_MASK;
 
         for (int i = 0; i < (MAX_PROC_GROUPS * 2); i++) {
                 curr = curr << 1;
@@ -1261,8 +1261,8 @@ static int thread_node_rr_affinity_set(DWORD tid, void *data)
 
         thread_node_map_update(sv, proc, &new_aff);
 
-        pr_raw("set [group: %2hu affinity: 0x%016jx] for [tid: %5lu pid: %5zu \"%ls\"] \n",
-               new_aff.Group, new_aff.Mask, tid, pid, proc_name);
+        pr_raw("[tid: %5lu pid: %5zu \"%ls\"] set [group: %2hu affinity: 0x%016jx]\n",
+               tid, pid, proc_name, new_aff.Group, new_aff.Mask);
 
         if (0 == SetThreadGroupAffinity(thrd_hdl, &new_aff, NULL)) {
                 pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
@@ -1396,6 +1396,9 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
                 return -ENOENT;
         }
 
+        if (profile->oneshot && entry->oneshot)
+                goto out;
+
         if (!entry->is_new && !is_image_path_contains(process, info)) {
                 err = -EINVAL;
                 goto out;
@@ -1428,6 +1431,9 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         }
 
         entry->is_new = 0;
+
+        if (profile->oneshot)
+                entry->oneshot = 1;
 
 out:
         CloseHandle(process);

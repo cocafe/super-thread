@@ -88,6 +88,7 @@ struct profile {
         size_t id_cnt;
 
         uint32_t granularity;
+        uint32_t oneshot;
         struct supervisor_cfg processes;
         struct supervisor_cfg threads;
 };
