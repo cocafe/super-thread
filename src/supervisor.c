@@ -1396,6 +1396,10 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
                 return -ENOENT;
         }
 
+        // allow to disable profile on the fly
+        if (!profile->enabled)
+                goto out;
+
         if (profile->oneshot && entry->oneshot)
                 goto out;
 
