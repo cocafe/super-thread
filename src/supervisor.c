@@ -24,6 +24,24 @@
 
 supervisor_t g_sv = { 0 };
 
+static uint8_t priofile_proc_prio_cls[] = {
+        [PROC_PRIO_UNCHANGED]           = PROCESS_PRIORITY_CLASS_UNKNOWN,
+        [PROC_PRIO_IDLE]                = PROCESS_PRIORITY_CLASS_IDLE,
+        [PROC_PRIO_NORMAL]              = PROCESS_PRIORITY_CLASS_NORMAL,
+        [PROC_PRIO_HIGH]                = PROCESS_PRIORITY_CLASS_HIGH,
+        [PROC_PRIO_REALTIME]            = PROCESS_PRIORITY_CLASS_REALTIME,
+        [PROC_PRIO_BELOW_NORMAL]        = PROCESS_PRIORITY_CLASS_BELOW_NORMAL,
+        [PROC_PRIO_ABOVE_NORMAL]        = PROCESS_PRIORITY_CLASS_ABOVE_NORMAL,
+};
+
+static int32_t profile_ioprio_ntval[] = {
+        [IO_PRIO_UNCHANGED]             = 0,
+        [IO_PRIO_VERY_LOW]              = IoPriorityVeryLow,
+        [IO_PRIO_LOW]                   = IoPriorityLow,
+        [IO_PRIO_NORMAL]                = IoPriorityNormal,
+        [IO_PRIO_HIGH]                  = IoPriorityHigh,
+};
+
 static void *tommy_hashtable_get(tommy_hashtable *tbl, tommy_hash_t hash)
 {
         tommy_node *n = tommy_hashtable_bucket(tbl, hash);
@@ -43,7 +61,7 @@ static inline proc_entry_t *proc_entry_alloc(void)
         return calloc(1, sizeof(proc_entry_t));
 }
 
-void proc_entry_init(proc_entry_t *entry, PROCESSENTRY32 *pe32, size_t profile_idx)
+void proc_entry_init(proc_entry_t *entry, DWORD pid, wchar_t *proc_exe, size_t profile_idx)
 {
         proc_info_t *info = &entry->info;
 
@@ -52,8 +70,8 @@ void proc_entry_init(proc_entry_t *entry, PROCESSENTRY32 *pe32, size_t profile_i
         entry->profile = &g_cfg.profiles[profile_idx];
         entry->profile_idx = profile_idx;
 
-        info->pid = pe32->th32ProcessID;
-        wcsncpy(info->name, pe32->szExeFile, wcslen(pe32->szExeFile));
+        info->pid = pid;
+        wcsncpy(info->name, proc_exe, wcslen(proc_exe)); // check string len?
 
         if (g_cfg.profiles[profile_idx].sched_mode == SUPERVISOR_THREADS)
                 tommy_hashtable_init(&entry->threads, THRD_HASH_TBL_BUCKET);
@@ -595,26 +613,8 @@ int process_prio_cls_set(HANDLE process, PROCESS_PRIORITY_CLASS *prio_cls)
         return 0;
 }
 
-int is_pid_tracked(tommy_hashtable *tbl, PROCESSENTRY32 *pe32)
+int is_pid_tracked(tommy_hashtable *tbl, DWORD pid, wchar_t *exe_file)
 {
-        /*
-        size_t pid = pe32->th32ProcessID;
-        tommy_hash_t hash = tommy_inthash_u32(pid);
-        tommy_node *n = tommy_hashtable_bucket(tbl, hash);
-
-        while (n) {
-                proc_entry_t *entry = n->data;
-                proc_info_t *info = &entry->info;
-
-                if (info->pid == pid && !wcsncmp(info->name, pe32->szExeFile, wcslen(info->name)))
-                        return 1;
-
-                n = n->next;
-        }
-         */
-
-
-        size_t pid = pe32->th32ProcessID;
         proc_entry_t *entry = tommy_hashtable_get(tbl, tommy_inthash_u32(pid));
         proc_info_t *info;
 
@@ -623,7 +623,7 @@ int is_pid_tracked(tommy_hashtable *tbl, PROCESSENTRY32 *pe32)
 
         info = &entry->info;
 
-        if (info->pid == pid && !wcsncmp(info->name, pe32->szExeFile, wcslen(info->name)))
+        if (info->pid == pid && is_wstr_equal(info->name, exe_file))
                 return 1;
 
         pr_err("hash matched but pid & process exe mismatched!\n");
@@ -651,7 +651,7 @@ int is_str_match_id(wchar_t *str, struct proc_identity *id)
                 if (!to_match)
                         return 0;
 
-                if (!wcsncmp(str, to_match, wcslen(str)))
+                if (is_wstr_equal(str, to_match))
                         return 1;
 
                 return 0;
@@ -660,129 +660,9 @@ int is_str_match_id(wchar_t *str, struct proc_identity *id)
         return 0;
 }
 
-static int is_file_handle_match(SYSTEM_HANDLE_ENTRY *hdl, DWORD pid, struct proc_identity *id)
-{
-        wchar_t path[MAX_PATH] = { 0 };
-        int ret = 0, nt_ret = 0;
-        int is_remote = pid != GetCurrentProcessId();
-
-        // case for owner is self
-        HANDLE hdup = (void *)((size_t)hdl->HandleValue);
-
-        if (is_remote) {
-                HANDLE process = OpenProcess(PROCESS_DUP_HANDLE, FALSE, pid);
-                if (!process) {
-                        pr_err("OpenProcess() failed, pid: %lu\n", pid);
-                        return 0;
-                }
-
-                nt_ret = DuplicateHandle(process,
-                                         (HANDLE)((size_t)hdl->HandleValue),
-                                         GetCurrentProcess(),
-                                         &hdup,
-                                         0,
-                                         FALSE,
-                                         DUPLICATE_SAME_ACCESS);
-
-                CloseHandle(process);
-
-                if (!NT_SUCCESS(nt_ret)) {
-                        pr_dbg("DuplicateHandle() failed, err: %lu pid: %lu\n", GetLastError(), pid);
-                        return 0;
-                }
-        }
-
-        ret = 0;
-
-        // return ZERO on failure
-        if (GetFinalPathNameByHandle(hdup, path, sizeof(path), VOLUME_NAME_DOS)) {
-                // XXX: the PATH is CODE PAGEd
-                pr_dbg("pid: %lu hdl: %d hdup: %zu file_path: %ls\n", pid, hdl->HandleValue, (size_t)hdup, path);
-
-                if (is_str_match_id(path, id))
-                        ret = 1;
-        }
-
-        if (hdup && is_remote)
-                CloseHandle(hdup);
-
-        return ret;
-}
-
-static int system_info_query(void **info, SYSTEM_INFORMATION_CLASS type, size_t *size)
-{
-        void *__info = NULL;
-        size_t sz = 0x2000; // sizeof(SYSTEM_HANDLE_INFORMATION)
-        unsigned long needed = 0;
-        int ret = 0;
-
-        if (!(*info)) {
-                pr_err("info must be empty\n");
-                return -EINVAL;
-        }
-
-try_again:
-        if (needed) // when try again, needed is set probably
-                sz = needed;
-
-        __info = calloc(1, sz);
-        if (!__info) {
-                pr_err("failed to allocate memory");
-                return -ENOMEM;
-        }
-
-        NTSTATUS status = NtQuerySystemInformation(type, __info, sz, &needed);
-        if (!NT_SUCCESS(status)) {
-                if (needed == 0 || needed == sz) {
-                        pr_err("unknown error!\n");
-                        ret = -EFAULT;
-                        goto err_free;
-                }
-
-                free(__info);
-                needed += 1024;
-                pr_dbg("adjust allocate size to %lu\n", needed);
-                goto try_again;
-        }
-
-        *info = __info;
-        *size = sz;
-
-        return ret;
-
-err_free:
-        free(__info);
-
-        return ret;
-}
-
-static int is_pid_has_file_handle(DWORD pid, struct proc_identity *id)
-{
-        SYSTEM_HANDLE_INFORMATION *hinfo;
-        size_t sz;
-        int err;
-
-        if ((err = system_info_query((void **)&hinfo, SystemHandleInformation, &sz)))
-                return err;
-
-        for (ULONG i = 0; i < hinfo->Count; i++) {
-                SYSTEM_HANDLE_ENTRY *h = &hinfo->Handle[i];
-
-                if (h->OwnerPid != pid)
-                        continue;
-
-                if (is_file_handle_match(h, pid, id))
-                        return 1;
-        }
-
-        free(hinfo);
-
-        return 0;
-}
-
 int is_profile_matched(PROCESSENTRY32 *pe32, size_t *profile_idx)
 {
-        size_t pid = pe32->th32ProcessID;
+//        size_t pid = pe32->th32ProcessID;
 
         for (size_t i = 0; i < g_cfg.profile_cnt; i++) {
                 profile_t *profile = &g_cfg.profiles[i];
@@ -797,14 +677,6 @@ int is_profile_matched(PROCESSENTRY32 *pe32, size_t *profile_idx)
                         switch (profile->id->type) {
                         case IDENTITY_PROCESS_EXE:
                                 if (is_str_match_id(pe32->szExeFile, id)) {
-                                        matched = 1;
-                                        goto out_id_cmp;
-                                }
-
-                                break;
-
-                        case IDENTITY_FILE_HANDLE:
-                                if (is_pid_has_file_handle(pid, id)) {
                                         matched = 1;
                                         goto out_id_cmp;
                                 }
@@ -849,6 +721,22 @@ int process_try_open(PROCESSENTRY32 *pe32)
         return 0;
 }
 
+int process_entry_init_insert(tommy_hashtable *tbl, DWORD pid, wchar_t *exe, size_t profile_idx)
+{
+        proc_entry_t *entry = NULL;
+
+        entry = proc_entry_alloc();
+        if (!entry) {
+                pr_err("failed to allocate memory\n");
+                return -ENOMEM;
+        }
+
+        proc_entry_init(entry, pid, exe, profile_idx);
+        tommy_hashtable_insert(tbl, &entry->node, entry, tommy_inthash_u32(pid));
+
+        return 0;
+}
+
 int process_list_build(supervisor_t *sv)
 {
         HANDLE hProcessSnap;
@@ -871,34 +759,31 @@ int process_list_build(supervisor_t *sv)
         }
 
         do {
-                proc_entry_t *entry = NULL;
                 size_t profile_idx = 0;
 
                 if (process_try_open(&pe32))
                         continue;
 
-                if (is_pid_tracked(proc_selected, &pe32))
+                if (is_pid_tracked(proc_selected, pe32.th32ProcessID, pe32.szExeFile)) {
+                        pr_verbose("pid: %lu \"%ls\" is tracked\n",
+                                   pe32.th32ProcessID, pe32.szExeFile);
                         continue;
+                }
 
-                if (!is_profile_matched(&pe32, &profile_idx))
+                if (!is_profile_matched(&pe32, &profile_idx)) {
+                        pr_verbose("pid: %lu \"%ls\" did not match any profiles\n",
+                                   pe32.th32ProcessID, pe32.szExeFile);
                         continue;
-
-                entry = proc_entry_alloc();
-                if (!entry) {
-                        pr_err("failed to allocate memory\n");
-                        err = -ENOMEM;
-                        goto out;
                 }
 
                 pr_info("pid: %lu \"%ls\" matched profile \"%s\"\n",
                         pe32.th32ProcessID, pe32.szExeFile,
                         g_cfg.profiles[profile_idx].name);
 
-                proc_entry_init(entry, &pe32, profile_idx);
-
-                tommy_hashtable_insert(proc_selected, &entry->node, entry,
-                                       tommy_inthash_u32(pe32.th32ProcessID));
-
+                process_entry_init_insert(proc_selected,
+                                          pe32.th32ProcessID,
+                                          pe32.szExeFile,
+                                          profile_idx);
         } while (Process32Next(hProcessSnap, &pe32));
 
 out:
@@ -906,15 +791,6 @@ out:
 
         return err;
 }
-
-//void proc_track_iterate(void *data)
-//{
-//        proc_entry_t *entry = data;
-//        proc_info_t *info = &entry->info;
-//
-//        pr_info("pid: %5zu name: %s proc_prio: %zd io_prio: %zd\n",
-//                info->pid, info->name, info->proc_prio, info->io_prio);
-//}
 
 void proc_hashit_iterate(tommy_hashtable *tbl)
 {
@@ -932,24 +808,6 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                 }
         }
 }
-
-static uint8_t priofile_proc_prio_cls[] = {
-        [PROC_PRIO_UNCHANGED]           = PROCESS_PRIORITY_CLASS_UNKNOWN,
-        [PROC_PRIO_IDLE]                = PROCESS_PRIORITY_CLASS_IDLE,
-        [PROC_PRIO_NORMAL]              = PROCESS_PRIORITY_CLASS_NORMAL,
-        [PROC_PRIO_HIGH]                = PROCESS_PRIORITY_CLASS_HIGH,
-        [PROC_PRIO_REALTIME]            = PROCESS_PRIORITY_CLASS_REALTIME,
-        [PROC_PRIO_BELOW_NORMAL]        = PROCESS_PRIORITY_CLASS_BELOW_NORMAL,
-        [PROC_PRIO_ABOVE_NORMAL]        = PROCESS_PRIORITY_CLASS_ABOVE_NORMAL,
-};
-
-static int32_t profile_ioprio_ntval[] = {
-        [IO_PRIO_UNCHANGED]             = 0,
-        [IO_PRIO_VERY_LOW]              = IoPriorityVeryLow,
-        [IO_PRIO_LOW]                   = IoPriorityLow,
-        [IO_PRIO_NORMAL]                = IoPriorityNormal,
-        [IO_PRIO_HIGH]                  = IoPriorityHigh,
-};
 
 int profile_proc_prio_set(profile_t *profile, HANDLE process)
 {
@@ -1004,12 +862,6 @@ int is_image_path_contains(HANDLE process, proc_info_t *info)
 
         return 1;
 }
-
-struct thrd_aff_set_data {
-        supervisor_t *sv;
-        proc_entry_t *entry;
-        GROUP_AFFINITY *aff;
-};
 
 static int process_sched_thread_affinity_set(DWORD tid, void *data)
 {
@@ -1374,10 +1226,43 @@ static int process_info_update(proc_info_t *info, HANDLE process)
         return err;
 }
 
+static int image_path_extract_file_name(DWORD pid, wchar_t *exe_name, size_t maxlen)
+{
+        wchar_t image_path[_MAX_PATH] = { 0 };
+        wchar_t file_name[_MAX_FNAME] = { 0 };
+        wchar_t ext_name[_MAX_EXT] = { 0 };
+        HANDLE process = OpenProcess(PROCESS_ALL_ACCESS |
+                                     PROCESS_QUERY_INFORMATION |
+                                     PROCESS_QUERY_LIMITED_INFORMATION,
+                                     FALSE,
+                                     pid);
+        if (!process) {
+                pr_verbose("OpenProcess() failed for pid %lu, err=%lu\n", pid, GetLastError());
+                return -EFAULT;
+        }
+
+        if (0 == GetProcessImageFileName(process, image_path, sizeof(image_path))) {
+                pr_err("GetProcessImageFileNameW() failed for pid %lu\n", pid);
+                CloseHandle(process);
+                return -EFAULT;
+        }
+
+        // WINDOWS SUCKS :)
+        _wsplitpath(image_path, NULL, NULL, file_name, ext_name);
+
+        // XXX: hardcoded _MAX_FNAME length
+        swprintf(exe_name, maxlen, L"%ls%ls", file_name, ext_name);
+
+        CloseHandle(process);
+
+        return 0;
+}
+
 static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
 {
         proc_info_t *info = &entry->info;
         profile_t *profile = entry->profile;
+        wchar_t exe_name[_MAX_FNAME] = { 0 };
         int err = 0;
         HANDLE process;
 
@@ -1403,7 +1288,10 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         if (profile->oneshot && entry->oneshot)
                 goto out;
 
-        if (!entry->is_new && !is_image_path_contains(process, info)) {
+        if (image_path_extract_file_name(entry->info.pid, exe_name, _MAX_FNAME))
+                goto out;
+
+        if (!entry->is_new && !is_wstr_equal(info->name, exe_name)) {
                 err = -EINVAL;
                 goto out;
         }
@@ -1475,6 +1363,242 @@ static int profile_settings_apply(supervisor_t *sv)
         return 0;
 }
 
+static int is_file_handle_match_profile(SYSTEM_HANDLE_ENTRY *hdl, DWORD pid, struct proc_identity *id)
+{
+//        wchar_t path[MAX_PATH] = { 0 };
+        int ret = 0, nt_ret = 0;
+        int is_remote = pid != GetCurrentProcessId();
+
+        // case for owner is self
+        HANDLE hdup = (void *)((size_t)hdl->HandleValue);
+
+//        if (pid == 2744 || pid == 5460 || pid == 8552 || pid == 4196)
+//                return 0;
+
+        if (is_remote) {
+                HANDLE process = OpenProcess(PROCESS_DUP_HANDLE, FALSE, pid);
+                if (!process) {
+                        pr_err("OpenProcess() failed, pid: %lu\n", pid);
+                        return 0;
+                }
+
+                nt_ret = DuplicateHandle(process,
+                                         (HANDLE)((size_t)hdl->HandleValue),
+                                         GetCurrentProcess(),
+                                         &hdup,
+                                         0,
+                                         FALSE,
+                                         DUPLICATE_SAME_ACCESS);
+
+                CloseHandle(process);
+
+                if (!NT_SUCCESS(nt_ret)) {
+                        pr_dbg("DuplicateHandle() failed, err: %lu pid: %lu\n", GetLastError(), pid);
+                        return 0;
+                }
+        }
+
+        ret = 0;
+
+        // return ZERO on failure
+//        if (GetFinalPathNameByHandle(hdup, path, sizeof(path), VOLUME_NAME_DOS)) {
+////                pr_dbg("pid: %lu hdl: %d hdup: %zu file_path: %ls\n", pid, hdl->HandleValue, (size_t)hdup, path);
+//
+//                if (is_str_match_id(path, id))
+//                        ret = 1;
+//        }
+//        {
+//                size_t name_sz = sizeof(FILE_NAME_INFO) + sizeof(wchar_t) * _MAX_FNAME;
+//                FILE_NAME_INFO *name_info = calloc(1, name_sz);
+//                FILE_BASIC_INFO basic_info;
+//
+//                name_info->FileNameLength = _MAX_PATH;
+//
+//                if (0 == GetFileInformationByHandleEx(hdup, FileBasicInfo, &basic_info, sizeof(basic_info)))
+//                        goto free;
+//
+//                // return ZERO on failure
+//                if (GetFileInformationByHandleEx(hdup, FileNameInfo, name_info, name_sz)) {
+//                        if (is_str_match_id(name_info->FileName, id))
+//                                ret = 1;
+//                }
+//
+//free:
+//                free(name_info);
+//        }
+
+        {
+                OBJECT_TYPE_INFORMATION *obj = NULL;
+                ULONG sz = 0;
+
+                NtQueryObject(hdup, ObjectTypeInformation, NULL, 0, &sz);
+                if (sz == 0) {
+                        pr_verbose("NtQueryObject() failed to query size, err = %lu\n", GetLastError());
+                        goto out_handle;
+                }
+
+                obj = malloc(sz);
+                if (!obj) {
+                        pr_err("failed to allocate buf, size: %lu\n", sz);
+                        goto out_handle;
+                }
+
+                nt_ret = NtQueryObject(hdup, ObjectTypeInformation, obj, sz, NULL);
+                if (!NT_SUCCESS(nt_ret)) {
+                        pr_verbose("NtQueryObject() failed, err=%lu\n", GetLastError());
+                        goto out_free;
+                }
+
+//                pr_info("pid: %lu handle type: %.*ls\n", pid, obj->TypeName.Length, obj->TypeName.Buffer);
+
+                if (wcscmp(obj->TypeName.Buffer, L"File") == 0) {
+                        wchar_t path[_MAX_PATH] = { 0 };
+
+                        // return ZERO on failure
+                        if (GetFinalPathNameByHandle(hdup, path, sizeof(path), FILE_NAME_NORMALIZED)) {
+                                pr_dbg("pid: %lu %.*ls: %ls\n", pid, obj->TypeName.Length, obj->TypeName.Buffer, path);
+
+                                if (is_str_match_id(path, id))
+                                        ret = 1;
+                        }
+                }
+
+out_free:
+                free(obj);
+out_handle:
+                ;
+        }
+
+        if (hdup && is_remote)
+                CloseHandle(hdup);
+
+        return ret;
+}
+
+static int system_info_query(void **info, SYSTEM_INFORMATION_CLASS type, size_t *size)
+{
+        void *__info = NULL;
+        size_t sz = 0x2000; // sizeof(SYSTEM_HANDLE_INFORMATION)
+        unsigned long needed = 0;
+        int ret = 0;
+
+        if (!(*info)) {
+                pr_err("info must be empty\n");
+                return -EINVAL;
+        }
+
+try_again:
+        if (needed) // when try again, needed is set probably
+                sz = needed;
+
+        __info = calloc(1, sz);
+        if (!__info) {
+                pr_err("failed to allocate memory");
+                return -ENOMEM;
+        }
+
+        NTSTATUS status = NtQuerySystemInformation(type, __info, sz, &needed);
+        if (!NT_SUCCESS(status)) {
+                if (needed == 0 || needed == sz) {
+                        pr_err("unknown error!\n");
+                        ret = -EFAULT;
+                        goto err_free;
+                }
+
+                free(__info);
+                needed += 4096;
+                pr_dbg("adjust allocate size to %lu\n", needed);
+                goto try_again;
+        }
+
+        *info = __info;
+        *size = sz;
+
+        return ret;
+
+err_free:
+        free(__info);
+
+        return ret;
+}
+
+static int process_list_add_by_handle(tommy_hashtable *tbl, SYSTEM_HANDLE_ENTRY *hdl, wchar_t *exe_name)
+{
+        profile_t *profile;
+        size_t idx;
+        DWORD pid;
+        int matched = 0;
+
+        for (idx = 0; idx < g_cfg.profile_cnt; idx++) {
+                profile = &g_cfg.profiles[idx];
+                pid = hdl->OwnerPid;
+
+                if (!profile->enabled)
+                        continue;
+
+                for (size_t j = 0; j < profile->id_cnt; j++) {
+                        struct proc_identity *id = &profile->id[j];
+
+                        if (id->type != IDENTITY_FILE_HANDLE)
+                                continue;
+
+                        if (is_file_handle_match_profile(hdl, pid, id)) {
+                                matched = 1;
+                                break;
+                        }
+                }
+
+                if (matched)
+                        break;
+        }
+
+        if (matched)
+                process_entry_init_insert(tbl, pid, exe_name, idx);
+
+        return 0;
+}
+
+int file_handle_search(supervisor_t *sv)
+{
+        tommy_hashtable *processes = &sv->proc_selected;
+        wchar_t exe_name[_MAX_FNAME] = {0 };
+        SYSTEM_HANDLE_INFORMATION *hinfo;
+        size_t sz;
+        int err;
+
+        if ((err = system_info_query((void **)&hinfo, SystemHandleInformation, &sz)))
+                return err;
+
+        for (ULONG i = 0; i < hinfo->Count; i++) {
+                SYSTEM_HANDLE_ENTRY *hdl = &hinfo->Handle[i];
+                DWORD pid = hdl->OwnerPid;
+                HANDLE process = OpenProcess(PROCESS_ALL_ACCESS |
+                                             PROCESS_QUERY_INFORMATION |
+                                             PROCESS_QUERY_LIMITED_INFORMATION,
+                                             FALSE,
+                                             pid);
+                if (!process) {
+                        pr_verbose("OpenProcess() failed for pid %lu, err=%lu\n", pid, GetLastError());
+                        continue;
+                }
+
+                if (image_path_extract_file_name(pid, exe_name, _MAX_FNAME))
+                        goto next_hdl;
+
+                if (is_pid_tracked(processes, pid, exe_name))
+                        goto next_hdl;
+
+                process_list_add_by_handle(processes, hdl, exe_name);
+
+next_hdl:
+                CloseHandle(process);
+        }
+
+        free(hinfo);
+
+        return 0;
+}
+
 int supervisor_loop(supervisor_t *sv)
 {
         tommy_hashtable *proc_selected = &sv->proc_selected;
@@ -1483,9 +1607,10 @@ int supervisor_loop(supervisor_t *sv)
         if ((err = process_list_build(sv)))
                 return err;
 
-        printf("----------------------------------\n");
+//        if ((err = file_handle_search(sv)))
+//                return err;
 
-//        tommy_hashtable_foreach(proc_track, proc_track_iterate);
+        printf("----------------------------------\n");
 
         profile_settings_apply(sv);
 

@@ -27,7 +27,7 @@ struct thrd_entry {
 };
 
 struct proc_info {
-        wchar_t                 name[MAX_PATH];
+        wchar_t                 name[_MAX_FNAME];
         size_t                  pid;
         PROCESS_PRIORITY_CLASS  proc_prio __attribute__((aligned(4)));
         IO_PRIORITY_HINT        io_prio;
@@ -74,6 +74,12 @@ struct supervisor {
 
         supervisor_val_t *vals;
         uint32_t          update_stamp;
+};
+
+struct thrd_aff_set_data {
+        supervisor_t *sv;
+        proc_entry_t *entry;
+        GROUP_AFFINITY *aff;
 };
 
 extern supervisor_t g_sv;
