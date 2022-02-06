@@ -89,6 +89,14 @@
                                  LOG_LEVEL_ERR    | \
                                  LOG_LEVEL_FATAL)
 
+#define LOG_LEVEL_ALL           (LOG_LEVEL_DBG    | \
+                                 LOG_LEVEL_INFO   | \
+                                 LOG_LEVEL_NOTICE | \
+                                 LOG_LEVEL_WARN   | \
+                                 LOG_LEVEL_ERR    | \
+                                 LOG_LEVEL_FATAL  | \
+                                 LOG_LEVEL_VERBOSE)
+
 //
 // zlog
 //
