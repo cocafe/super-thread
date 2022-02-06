@@ -159,12 +159,10 @@ int __str_cat(char *dest, size_t dest_sz, char *src);
 char *__str_ncpy(char *dest, const char *src, size_t dest_sz);
 int bin_snprintf(char *str, size_t slen, uint64_t val, size_t vsize);
 
-static inline int __str_cmp(char *a, char *b, int caseless)
+static inline int is_str_equal(char *a, char *b, int caseless)
 {
-        enum {
-                EQUAL = 0,
-                NOT_EQUAL,
-        };
+        const int EQUAL = 1;
+        const int NOT_EQUAL = 0;
 
         size_t len_a = strlen(a);
         size_t len_b = strlen(b);
@@ -173,13 +171,30 @@ static inline int __str_cmp(char *a, char *b, int caseless)
                 return NOT_EQUAL;
 
         if (caseless) {
-                if (!strncasecmp(a, b, __min(len_a, len_b)))
+                if (!strncasecmp(a, b, len_a))
                         return EQUAL;
 
                 return NOT_EQUAL;
         }
 
-        if (!strncmp(a, b, __min(len_a, len_b)))
+        if (!strncmp(a, b, len_a))
+                return EQUAL;
+
+        return NOT_EQUAL;
+}
+
+static inline int is_wstr_equal(wchar_t *a, wchar_t *b)
+{
+        const int EQUAL = 1;
+        const int NOT_EQUAL = 0;
+
+        size_t len_a = wcslen(a);
+        size_t len_b = wcslen(b);
+
+        if (len_a != len_b)
+                return NOT_EQUAL;
+
+        if (!wcsncmp(a, b, len_a))
                 return EQUAL;
 
         return NOT_EQUAL;
