@@ -22,6 +22,8 @@ struct thrd_entry {
         size_t          pid;
         GROUP_AFFINITY  last_aff;
         uint32_t        last_update;
+
+        // track change time
 };
 
 struct proc_info {
@@ -35,7 +37,7 @@ struct proc_info {
 
 struct proc_entry {
         tommy_node      node;
-//        tommy_hashtable threads;
+        tommy_hashtable threads;
 
         proc_info_t     info;
 
@@ -50,25 +52,31 @@ struct proc_entry {
 
 struct procs_sched {
         unsigned long node_map_next;
-        unsigned long node_map_init;
+};
+
+struct thrds_sched {
+        unsigned long node_map_next;
+        unsigned long cpu_map_next;
+        unsigned long cpu_map_init;
 };
 
 // intermediate variables
 struct supervisor_val {
         union {
                 struct procs_sched procs_sched;
+                struct thrds_sched thrds_sched;
         } u;
 };
 
 struct supervisor {
-        size_t            active_proc_grp; // TODO: move to system info
-
         pthread_t         tid_worker;
         tommy_hashtable   proc_selected;
 
         supervisor_val_t *vals;
         uint32_t          update_stamp;
 };
+
+extern supervisor_t g_sv;
 
 int supervisor_init(supervisor_t *sv);
 int supervisor_deinit(supervisor_t *sv);

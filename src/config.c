@@ -3,6 +3,7 @@
 #include "jkey.h"
 #include "config.h"
 #include "logging.h"
+#include "sysinfo.h"
 
 struct config g_cfg;
 
@@ -157,23 +158,24 @@ static jbuf_t jbuf_usrcfg = { 0 };
 
 int profile_validate(profile_t *profile)
 {
+        size_t nr_cpu_grp = g_sys_info.nr_cpu_grp;
+        uint32_t avail_node_map = GENMASK(nr_cpu_grp - 1, 0);
+
         if (profile->enabled == 0)
                 pr_info("profile [%s] is disabled\n", profile->name);
 
         if (profile->granularity == SUPERVISOR_PROCESSES) {
-                profile->processes.node_map &= GENMASK((MAX_PROC_GROUPS - 1), 0);
+                profile->processes.node_map &= avail_node_map;
 
                 switch (profile->processes.balance) {
                 case PROC_BALANCE_BY_MAP:
                 case PROC_BALANCE_RR:
-                        // TODO: validate node_map range, & valided range
                         if (profile->processes.node_map == 0) {
                                 pr_err("profile [%s] node_map is not set which is needed for by_map\n",
                                        profile->name);
                                 return -EINVAL;
                         }
 
-                        // TODO: validate affinity range
                         if (profile->processes.affinity == 0) {
                                 pr_err("profile [%s] affinity is not set\n", profile->name);
                                 return -EINVAL;
@@ -193,6 +195,8 @@ int profile_validate(profile_t *profile)
                         return -EINVAL;
                 }
 
+        } else if (profile->granularity == SUPERVISOR_THREADS) {
+                profile->threads.node_map &= avail_node_map;
         }
 
         return 0;

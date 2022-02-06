@@ -18,8 +18,11 @@
 
 #include "config.h"
 #include "logging.h"
+#include "sysinfo.h"
 #include "supervisor.h"
 #include "myntapi.h"
+
+supervisor_t g_sv = { 0 };
 
 static void *tommy_hashtable_get(tommy_hashtable *tbl, tommy_hash_t hash)
 {
@@ -52,19 +55,23 @@ void proc_entry_init(proc_entry_t *entry, PROCESSENTRY32 *pe32, size_t profile_i
         info->pid = pe32->th32ProcessID;
         wcsncpy(info->name, pe32->szExeFile, wcslen(pe32->szExeFile));
 
-//        tommy_hashtable_init(&entry->threads, THRD_HASH_TBL_BUCKET);
+        if (g_cfg.profiles[profile_idx].granularity == SUPERVISOR_THREADS)
+                tommy_hashtable_init(&entry->threads, THRD_HASH_TBL_BUCKET);
 }
 
-//void proc_threads_tbl_free(void *data)
-//{
-//        if (data)
-//                free(data);
-//}
+void proc_threads_tbl_free(void *data)
+{
+        if (data)
+                free(data);
+}
 
 void proc_entry_free(proc_entry_t *entry)
 {
-//        tommy_hashtable_foreach(&entry->threads, proc_threads_tbl_free);
-//        tommy_hashtable_done(&entry->threads);
+        if (g_cfg.profiles[entry->profile_idx].granularity == SUPERVISOR_THREADS){
+                tommy_hashtable_foreach(&entry->threads, proc_threads_tbl_free);
+                tommy_hashtable_done(&entry->threads);
+        }
+
         free(entry);
 }
 
@@ -998,114 +1005,13 @@ int is_image_path_contains(HANDLE process, proc_info_t *info)
         return 1;
 }
 
-thrd_entry_t *thrd_entry_get(tommy_hashtable *tbl, DWORD tid, DWORD pid)
-{
-        thrd_entry_t *entry = tommy_hashtable_get(tbl, tommy_inthash_u32(tid));
-        if (!entry)
-                return NULL;
-
-        if (entry->tid == tid && entry->pid == pid)
-                return entry;
-
-        return NULL;
-}
-
 struct thrd_aff_set_data {
         supervisor_t *sv;
         proc_entry_t *entry;
         GROUP_AFFINITY *aff;
 };
 
-#if 0
-static int sched_thread_affinity_set(DWORD tid, void *data)
-{
-        supervisor_t *sv = ((struct thrd_aff_set_data *)data)->sv;
-        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->entry;
-        GROUP_AFFINITY *new_aff = ((struct thrd_aff_set_data *)data)->aff;
-        thrd_entry_t *thrd_entry = thrd_entry_get(&proc->threads, tid, proc->info.pid);
-        size_t pid = proc->info.pid;
-        wchar_t *proc_name = proc->info.name;
-        GROUP_AFFINITY curr_aff;
-        int delete = 0, err = 0;
-        HANDLE thrd_hdl = OpenThread(THREAD_SET_INFORMATION |
-                                     THREAD_QUERY_INFORMATION,
-                                     FALSE,
-                                     tid);
-
-        if (!thrd_hdl) { // thread might just be closed
-                pr_err("OpenThread() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
-                       tid, pid, proc_name, GetLastError());
-                err = -EFAULT;
-                if (thrd_entry)
-                        delete = 1;
-
-                goto not_exist;
-        }
-
-        if (0 == GetThreadGroupAffinity(thrd_hdl, &curr_aff)) {
-                pr_err("GetThreadGroupAffinity() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
-                       tid, pid, proc_name, GetLastError());
-                err = -EFAULT;
-                if (thrd_entry)
-                        delete = 1;
-
-                goto out;
-        }
-
-        // new thread
-        if (!thrd_entry) {
-                thrd_entry = calloc(1, sizeof(thrd_entry_t));
-                if (!thrd_entry) {
-                        err = -ENOMEM;
-                        goto out;
-                }
-
-                thrd_entry->tid = tid;
-                thrd_entry->pid = proc->info.pid;
-                tommy_hashtable_insert(&proc->threads, &thrd_entry->node, thrd_entry, tommy_inthash_u32(tid));
-        } else { // old thread
-                GROUP_AFFINITY *last_aff = &thrd_entry->last_aff;
-
-                if (last_aff->Group == curr_aff.Group && last_aff->Mask == curr_aff.Mask) {
-                        pr_dbg("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid, proc_name);
-                        goto out;
-                }
-        }
-
-        pr_dbg("tid: %5lu pid: %5zu \"%ls\" set node: %hu affinity: 0x%016jx\n",
-               tid, pid, proc_name, new_aff->Group, new_aff->Mask);
-
-        if (0 == SetThreadGroupAffinity(thrd_hdl, new_aff, NULL)) {
-                pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
-                       tid, pid, proc_name, GetLastError());
-                err = -EFAULT;
-                delete = 1;
-
-                goto out;
-        }
-
-        memcpy(&thrd_entry->last_aff, &curr_aff, sizeof(GROUP_AFFINITY));
-
-out:
-        thrd_entry->last_update = sv->update_stamp;
-
-        CloseHandle(thrd_hdl);
-
-not_exist:
-        if (thrd_entry && delete) {
-                tommy_node *n = &thrd_entry->node;
-
-                pr_dbg("delete tid: %5lu pid: %5zu\n", tid, pid);
-
-                tommy_hashtable_remove_existing(&proc->threads, n);
-                free(thrd_entry);
-        }
-
-        return err;
-}
-#endif
-
-static int sched_thread_affinity_set(DWORD tid, void *data)
+static int process_sched_thread_affinity_set(DWORD tid, void *data)
 {
         proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->entry;
         GROUP_AFFINITY *new_aff = ((struct thrd_aff_set_data *)data)->aff;
@@ -1113,7 +1019,6 @@ static int sched_thread_affinity_set(DWORD tid, void *data)
         GROUP_AFFINITY curr_aff;
         size_t pid = proc->info.pid;
         wchar_t *proc_name = proc->info.name;
-        int err = 0;
 
         HANDLE thread = OpenThread(THREAD_SET_INFORMATION |
                                    THREAD_QUERY_INFORMATION,
@@ -1123,14 +1028,12 @@ static int sched_thread_affinity_set(DWORD tid, void *data)
         if (!thread) { // thread might just be closed
                 pr_err("OpenThread() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
                        tid, pid, proc_name, GetLastError());
-                err = -EFAULT;
                 goto out;
         }
 
         if (0 == GetThreadGroupAffinity(thread, &curr_aff)) {
                 pr_err("GetThreadGroupAffinity() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
                        tid, pid, proc_name, GetLastError());
-                err = -EFAULT;
                 goto out;
         }
 
@@ -1139,19 +1042,18 @@ static int sched_thread_affinity_set(DWORD tid, void *data)
                 goto out;
         }
 
-        pr_dbg("set [group: %2hu affinity: 0x%016jx] for [tid: %5lu pid: %5zu \"%ls\"] \n",
+        pr_raw("set [group: %2hu affinity: 0x%016jx] for [tid: %5lu pid: %5zu \"%ls\"] \n",
                new_aff->Group, new_aff->Mask, tid, pid, proc_name);
 
         if (0 == SetThreadGroupAffinity(thread, new_aff, NULL)) {
                 pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
                        tid, pid, proc_name, GetLastError());
-                err = -EFAULT;
         }
 
 out:
         CloseHandle(thread);
 
-        return err;
+        return 0;
 }
 
 static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entry,
@@ -1182,7 +1084,7 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entr
                         .aff = new_aff,
                 };
 
-                err = process_threads_iterate(info->pid, sched_thread_affinity_set, &data);
+                err = process_threads_iterate(info->pid, process_sched_thread_affinity_set, &data);
         }
 
         if (entry->is_new) {
@@ -1199,7 +1101,7 @@ static int processes_sched_by_map(supervisor_t *sv, proc_entry_t *entry, HANDLE 
 
         new_aff.Mask = profile->processes.affinity;
         new_aff.Group = find_first_bit((void *)&profile->processes.node_map,
-                                       sizeof(profile->processes.node_map));
+                                       SIZE_TO_BITS(profile->processes.node_map));
 
         return processes_sched_set_new_affinity(sv, entry, process, &new_aff);;
 }
@@ -1222,6 +1124,20 @@ static unsigned long node_map_next(unsigned long curr, unsigned long mask)
         return curr;
 }
 
+static void new_affinity_limit(GROUP_AFFINITY *new_aff, uint64_t affinity, uint32_t group)
+{
+        struct cpu_grp_info *cpu_grp = &g_sys_info.cpu_grp[group];
+
+        affinity &= cpu_grp->grp_mask;
+        if (unlikely(affinity == 0))
+                affinity = cpu_grp->grp_mask;
+
+        memset(new_aff, 0x00, sizeof(GROUP_AFFINITY));
+        new_aff->Mask = affinity;
+        new_aff->Group = group;
+}
+
+
 static int processes_sched_rr(supervisor_t *sv, proc_entry_t *entry, HANDLE process)
 {
         profile_t *profile = entry->profile;
@@ -1230,51 +1146,15 @@ static int processes_sched_rr(supervisor_t *sv, proc_entry_t *entry, HANDLE proc
         GROUP_AFFINITY new_aff = { 0 };
         int err;
 
-        // init for the first time
-        if (!val->node_map_init) {
-                val->node_map_init = 1 << find_first_bit(&node_map, sizeof(node_map));
-                val->node_map_next = val->node_map_init;
-        }
+        val->node_map_next = node_map_next(val->node_map_next, node_map);
 
-        new_aff.Mask = profile->processes.affinity;
-        new_aff.Group = find_first_bit(&val->node_map_next, sizeof(val->node_map_next));
+        new_affinity_limit(&new_aff, profile->processes.affinity,
+                           find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next)));
 
         err = processes_sched_set_new_affinity(sv, entry, process, &new_aff);
 
-        val->node_map_next = node_map_next(val->node_map_next, node_map);
-
         return err;
 }
-
-//static void dead_thread_entry_remove(supervisor_t *sv, proc_entry_t *proc_entry)
-//{
-//        tommy_hashtable *thrd_tbl = &proc_entry->threads;
-//
-//        if (thrd_tbl->count == 0) {
-//                pr_verbose("pid: %5zu \"%ls\" does not have thread tracked\n",
-//                           proc_entry->info.pid, proc_entry->info.name);
-//                return;
-//        }
-//
-//        for (size_t i = 0; i < thrd_tbl->bucket_max; i++) {
-//                tommy_node *n = thrd_tbl->bucket[i];
-//
-//                while (n) {
-//                        tommy_node *next = n->next;
-//
-//                        thrd_entry_t *thrd_entry = n->data;
-//
-//                        if (thrd_entry->last_update != sv->update_stamp) {
-//                                pr_dbg("remove dead thread: tid: %5zu pid: %5zu \"%ls\"\n",
-//                                       thrd_entry->tid, thrd_entry->pid, proc_entry->info.name);
-//                                tommy_hashtable_remove_existing(thrd_tbl, n);
-//                                free(n->data);
-//                        }
-//
-//                        n = next;
-//                }
-//        }
-//}
 
 static int supervisor_processes_sched(supervisor_t *sv, proc_entry_t *entry, HANDLE process)
 {
@@ -1299,7 +1179,177 @@ static int supervisor_processes_sched(supervisor_t *sv, proc_entry_t *entry, HAN
                 return -EINVAL;
         }
 
-//        dead_thread_entry_remove(sv, entry);
+        return 0;
+}
+
+static void thread_node_map_update(supervisor_t *sv, proc_entry_t *proc, GROUP_AFFINITY *new_aff)
+{
+        profile_t *profile = proc->profile;
+        unsigned long node_map = profile->threads.node_map;
+        struct thrds_sched *val = &(sv->vals[proc->profile_idx].u.thrds_sched);
+
+        val->node_map_next = node_map_next(val->node_map_next, node_map);
+
+        new_affinity_limit(new_aff, profile->threads.affinity,
+                           find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next)));
+
+}
+
+static thrd_entry_t *thrd_entry_get(tommy_hashtable *tbl, DWORD tid, DWORD pid)
+{
+        thrd_entry_t *entry = tommy_hashtable_get(tbl, tommy_inthash_u32(tid));
+        if (!entry)
+                return NULL;
+
+        if (entry->tid == tid && entry->pid == pid)
+                return entry;
+
+        return NULL;
+}
+
+static int thread_node_rr_affinity_set(DWORD tid, void *data)
+{
+        supervisor_t *sv = ((struct thrd_aff_set_data *)data)->sv;
+        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->entry;
+        thrd_entry_t *thrd_entry = thrd_entry_get(&proc->threads, tid, proc->info.pid);
+        wchar_t *proc_name = proc->info.name;
+        size_t pid = proc->info.pid;
+        GROUP_AFFINITY curr_aff, new_aff = { 0 };
+        int delete = 0;
+
+        HANDLE thrd_hdl = OpenThread(THREAD_SET_INFORMATION |
+                                     THREAD_QUERY_INFORMATION,
+                                     FALSE,
+                                     tid);
+
+        if (!thrd_hdl) { // thread might just be closed
+                pr_err("OpenThread() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
+                       tid, pid, proc_name, GetLastError());
+                if (thrd_entry)
+                        delete = 1;
+
+                goto not_exist;
+        }
+
+        if (0 == GetThreadGroupAffinity(thrd_hdl, &curr_aff)) {
+                pr_err("GetThreadGroupAffinity() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
+                       tid, pid, proc_name, GetLastError());
+                if (thrd_entry)
+                        delete = 1;
+
+                goto out;
+        }
+
+        // new thread
+        if (!thrd_entry) {
+                thrd_entry = calloc(1, sizeof(thrd_entry_t));
+                if (!thrd_entry) {
+                        goto out;
+                }
+
+                thrd_entry->tid = tid;
+                thrd_entry->pid = proc->info.pid;
+                tommy_hashtable_insert(&proc->threads, &thrd_entry->node, thrd_entry, tommy_inthash_u32(tid));
+        } else { // old thread
+                GROUP_AFFINITY *last_aff = &thrd_entry->last_aff;
+
+                if (last_aff->Group == curr_aff.Group && last_aff->Mask == curr_aff.Mask) {
+                        pr_verbose("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid, proc_name);
+                        goto out;
+                }
+        }
+
+        thread_node_map_update(sv, proc, &new_aff);
+
+        pr_raw("set [group: %2hu affinity: 0x%016jx] for [tid: %5lu pid: %5zu \"%ls\"] \n",
+               new_aff.Group, new_aff.Mask, tid, pid, proc_name);
+
+        if (0 == SetThreadGroupAffinity(thrd_hdl, &new_aff, NULL)) {
+                pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
+                       tid, pid, proc_name, GetLastError());
+                delete = 1;
+
+                goto out;
+        }
+
+        memcpy(&thrd_entry->last_aff, &new_aff, sizeof(thrd_entry->last_aff));
+
+out:
+        thrd_entry->last_update = sv->update_stamp;
+
+        CloseHandle(thrd_hdl);
+
+not_exist:
+        if (thrd_entry && delete) {
+                tommy_node *n = &thrd_entry->node;
+
+                tommy_hashtable_remove_existing(&proc->threads, n);
+                free(thrd_entry);
+        }
+
+        return 0;
+}
+
+static int threads_sched_node_rr(supervisor_t *sv, proc_entry_t *entry)
+{
+        struct thrd_aff_set_data data = {
+                .sv = sv,
+                .entry = entry,
+        };
+
+        return process_threads_iterate(entry->info.pid, thread_node_rr_affinity_set, &data);
+}
+
+static void dead_thread_entry_remove(supervisor_t *sv, proc_entry_t *proc_entry)
+{
+        tommy_hashtable *thrd_tbl = &proc_entry->threads;
+
+        if (thrd_tbl->count == 0) {
+                pr_verbose("pid: %5zu \"%ls\" does not have thread tracked\n",
+                           proc_entry->info.pid, proc_entry->info.name);
+                return;
+        }
+
+        for (size_t i = 0; i < thrd_tbl->bucket_max; i++) {
+                tommy_node *n = thrd_tbl->bucket[i];
+
+                while (n) {
+                        tommy_node *next = n->next;
+
+                        thrd_entry_t *thrd_entry = n->data;
+
+                        if (thrd_entry->last_update != sv->update_stamp) {
+                                pr_dbg("remove dead thread: tid: %5zu pid: %5zu \"%ls\"\n",
+                                       thrd_entry->tid, thrd_entry->pid, proc_entry->info.name);
+                                tommy_hashtable_remove_existing(thrd_tbl, n);
+                                free(n->data);
+                        }
+
+                        n = next;
+                }
+        }
+}
+
+static int supervisor_threads_sched(supervisor_t *sv, proc_entry_t *entry)
+{
+        switch (entry->profile->threads.balance) {
+        case THRD_BALANCE_CPU_RR:
+                break;
+
+        case THRD_BALANCE_NODE_RR:
+                threads_sched_node_rr(sv, entry);
+                break;
+
+        case THRD_BALANCE_RAND:
+                break;
+
+        case THRD_BALANCE_ONLOAD:
+        default:
+                pr_err("invalid balance mode\n");
+                return -EINVAL;
+        }
+
+        dead_thread_entry_remove(sv, entry);
 
         return 0;
 }
@@ -1362,9 +1412,19 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         if ((err = profile_prio_ioprio_set(profile, process)))
                 goto out;
 
-        if (profile->granularity == SUPERVISOR_PROCESSES) {
-                if ((err = supervisor_processes_sched(sv, entry, process)))
-                        goto out;
+        switch (profile->granularity) {
+        case SUPERVISOR_PROCESSES:
+                err = supervisor_processes_sched(sv, entry, process);
+                break;
+
+        case SUPERVISOR_THREADS:
+                err = supervisor_threads_sched(sv, entry);
+                break;
+
+        default:
+                pr_err("invalid sched mode\n");
+                err = -EINVAL;
+                break;
         }
 
         entry->is_new = 0;
@@ -1459,11 +1519,6 @@ int supervisor_run(supervisor_t *sv)
 int supervisor_init(supervisor_t *sv)
 {
         size_t profile_cnt = g_cfg.profile_cnt;
-
-        sv->active_proc_grp = GetActiveProcessorGroupCount();
-
-        if (sv->active_proc_grp < 2)
-                pr_notice("active processor group count %zu < 2\n", sv->active_proc_grp);
 
         tommy_hashtable_init(&sv->proc_selected, PROC_HASH_TBL_BUCKET);
 

@@ -106,4 +106,4 @@ extern struct config g_cfg;
 int usrcfg_init(void);
 int usrcfg_deinit(void);
 
-#endif //SUPER_THREAD_CONFIG_H
+#endif // SUPER_THREAD_CONFIG_H

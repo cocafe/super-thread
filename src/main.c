@@ -109,18 +109,16 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         MB_MSG_INFO("PRESS TO START");
 
-        {
-                supervisor_t sv = { 0 };
+        supervisor_init(&g_sv);
 
-                supervisor_init(&sv);
-                supervisor_run(&sv);
-                supervisor_deinit(&sv);
-        }
+        supervisor_run(&g_sv);
 
         while (GetMessage(&msg, NULL, 0, 0)) {
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
         }
+
+        supervisor_deinit(&g_sv);
 
         usrcfg_deinit();
 
