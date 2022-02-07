@@ -2,45 +2,12 @@
 #include <errno.h>
 
 #include <windows.h>
+#include <winuser.h>
 #include <shellapi.h>
 
+#include <resource.h>
 #include "logging.h"
-
-#define WM_TRAY_CALLBACK_MESSAGE        (WM_USER + 1)
-#define WC_TRAY_CLASS_NAME              "TRAY"
-#define ID_TRAY_FIRST                   (1000)
-
-struct tray_menu {
-        int                     is_end;
-
-        char                   *name;
-        UINT                    id;
-        int                     disabled;
-        int                     checked;
-        int                     separator;
-
-        void                    (*cb)(struct tray_menu *);
-
-        void                   *userdata;
-
-        struct tray_menu       *submenu;
-};
-
-struct tray_data {
-        WNDCLASSEX      wc;
-        NOTIFYICONDATA  nid;
-        HWND            hwnd;
-        HMENU           hmenu;
-        char           *icon_path;
-        char           *icon_last;
-};
-
-struct tray {
-        struct tray_data data;
-        struct tray_menu *menu;
-};
-
-// TODO: thread sync?
+#include "tray.h"
 
 static LRESULT CALLBACK tray_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -167,20 +134,33 @@ void tray_icon_update(struct tray *tray)
 {
         NOTIFYICONDATA *nid = &tray->data.nid;
         HICON hicon = NULL;
-        int ret;
 
-        if (tray->data.icon_path == tray->data.icon_last)
-                return;
+        if (tray->icon.id > 0) {
+                if (tray->icon.id == tray->icon.id_last)
+                        return;
 
-        if (!tray->data.icon_path) {
-                pr_dbg("icon path is NULL, clear icon\n");
-                goto update_icon;
-        }
+                hicon = LoadIcon(tray->data.ins, MAKEINTRESOURCE(tray->icon.id));
+                if (hicon == NULL) {
+                        pr_err("LoadIcon() failed, err=%lu\n", GetLastError());
+                        goto update_icon;
+                }
 
-        ret = ExtractIconEx(tray->data.icon_path, 0, NULL, &hicon, 0);
-        if (ret == -1) {
-                pr_err("failed to load icon: %s\n", tray->data.icon_path);
-                hicon = NULL;
+                tray->icon.id_last = tray->icon.id;
+        } else if (tray->icon.path != NULL) {
+                int ret;
+
+                if (!wcsncmp(tray->icon.path, tray->icon.path_last, wcslen(tray->icon.path_last)))
+                        return;
+
+                ret = ExtractIconEx(tray->icon.path, 0, NULL, &hicon, 0);
+                if (ret == -1) {
+                        pr_err("ExtractIconEx() failed for path: %ls, err=%lu\n", tray->icon.path, GetLastError());
+                        goto update_icon;
+                }
+
+                wcsncpy(tray->icon.path_last, tray->icon.path, WCBUF_LEN(tray->icon.path_last));
+        } else {
+                pr_verbose("neither icon path or id are defined\n");
         }
 
 update_icon:
@@ -191,8 +171,6 @@ update_icon:
 
         nid->hIcon = hicon;
         Shell_NotifyIcon(NIM_MODIFY, nid);
-
-        tray->data.icon_last = tray->data.icon_path;
 }
 
 void tray_update(struct tray *tray)
@@ -212,7 +190,7 @@ void tray_update(struct tray *tray)
         }
 }
 
-int tray_init(struct tray *tray)
+int tray_init(struct tray *tray, HINSTANCE ins)
 {
         WNDCLASSEX *wc;
         NOTIFYICONDATA *nid;
@@ -222,19 +200,19 @@ int tray_init(struct tray *tray)
                 return -EINVAL;
 
         wc = &tray->data.wc;
-        memset(wc, 0, sizeof(WNDCLASSEX));
-        wc->cbSize = sizeof(WNDCLASSEX);
-        wc->lpfnWndProc = tray_wnd_proc;
-        wc->hInstance = GetModuleHandle(NULL);
-        wc->lpszClassName = WC_TRAY_CLASS_NAME;
+        memset(wc, 0x00, sizeof(WNDCLASSEX));
+        wc->cbSize              = sizeof(WNDCLASSEX);
+        wc->lpfnWndProc         = tray_wnd_proc;
+        wc->hInstance           = GetModuleHandle(NULL);
+        wc->lpszClassName       = WC_TRAY_CLASS_NAME;
         if (!RegisterClassEx(wc)) {
-                // printf()
+                pr_err("RegisterClassEx() failed\n");
                 return -EFAULT;
         }
 
         hwnd = CreateWindowEx(0, WC_TRAY_CLASS_NAME, NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         if (hwnd == NULL) {
-                // printf()
+                pr_err("CreateWindowEx() failed\n");
                 return -EFAULT;
         }
 
@@ -242,13 +220,15 @@ int tray_init(struct tray *tray)
         UpdateWindow(hwnd);
         tray->data.hwnd = hwnd;
 
+        tray->data.ins = ins;
+
         nid = &tray->data.nid;
         memset(nid, 0, sizeof(NOTIFYICONDATA));
-        nid->cbSize = sizeof(NOTIFYICONDATA);
-        nid->hWnd = hwnd;
-        nid->uID = 0;
-        nid->uFlags = NIF_ICON | NIF_MESSAGE;
-        nid->uCallbackMessage = WM_TRAY_CALLBACK_MESSAGE;
+        nid->cbSize             = sizeof(NOTIFYICONDATA);
+        nid->hWnd               = hwnd;
+        nid->uID                = 0;
+        nid->uFlags             = NIF_ICON | NIF_MESSAGE;
+        nid->uCallbackMessage   = WM_TRAY_CALLBACK_MESSAGE;
         Shell_NotifyIcon(NIM_ADD, nid);
 
         tray_update(tray);
@@ -302,167 +282,3 @@ int tray_loop(int blocking) {
 
         return 0;
 }
-
-//
-//
-//
-
-#define TRAY_ICON1 "icon1.ico"
-#define TRAY_ICON2 "icon2.ico"
-
-struct tray tray;
-
-static void toggle_cb(struct tray_menu *item) {
-        printf("toggle cb\n");
-        item->checked = !item->checked;
-        tray_update(&tray);
-}
-
-static void hello_cb(struct tray_menu *item) {
-        (void)item;
-
-        printf("hello cb: item->name: %s item->id: %d\n", item->name, item->id);
-
-        if (strcmp(tray.data.icon_path, TRAY_ICON1) == 0) {
-                tray.data.icon_path = TRAY_ICON2;
-        } else {
-                tray.data.icon_path = TRAY_ICON1;
-        }
-
-        tray_update(&tray);
-}
-
-static void quit_cb(struct tray_menu *item) {
-        (void)item;
-        printf("quit cb\n");
-
-        tray_exit(&tray);
-}
-
-static void submenu_cb(struct tray_menu *item) {
-        (void)item;
-
-        printf("submenu: clicked on %s, id: %d\n", item->name, item->id);
-
-        item->checked = !item->checked;
-
-        tray_update(&tray);
-}
-
-struct tray tray = {
-        .data = {
-                .icon_path = TRAY_ICON1,
-        },
-        .menu = (struct tray_menu[]) {
-                { .name = "\xb9\xfe\xb9\xfe", .cb = hello_cb },
-                { .name = "Checked", .checked = 1, .cb = toggle_cb },
-                { .name = "Disabled", .disabled = 1 },
-                { .separator = 1 },
-                {
-                        .name = "Sub Menu",
-                        .submenu = (struct tray_menu[]) {
-                                { .name = "I", .checked = 1, .cb = submenu_cb },
-                                {
-                                        .name = "II",
-                                        .submenu = (struct tray_menu[]) {
-                                                {
-                                                        .name = "III",
-                                                        .cb = submenu_cb
-                                                },
-                                                { .is_end = 1 },
-                                        },
-                                },
-                                { .is_end = 1 },
-                        },
-                },
-                { .separator = 1 },
-                { .name = "Quit", .cb = quit_cb },
-                { .is_end = 1 }
-        }
-};
-
-//void console_init(void);
-//void console_deinit(void);
-//void console_stdio_redirect(void);
-//
-//#include <OlsApi.h>
-//#include <OlsDef.h>
-//
-//int WINAPI WinMain(HINSTANCE ins, HINSTANCE prev_ins,
-//                   LPSTR cmdline, int cmdshow)
-//{
-//        (void)ins;
-//        (void)prev_ins;
-//        (void)cmdline;
-//        (void)cmdshow;
-//
-//        console_init();
-//        console_stdio_redirect();
-//
-//        if (InitializeOls() == FALSE) {
-//                printf("failed to init winring0\n");
-//                return 2;
-//        }
-//
-//        {
-//                switch (GetDllStatus()) {
-//                case OLS_DLL_NO_ERROR:
-//                        break;
-//
-//                case OLS_DLL_UNSUPPORTED_PLATFORM:
-//                        printf("DLL Status Error!! UNSUPPORTED_PLATFORM\n");
-//                        goto winring0_free;
-//
-//                case OLS_DLL_DRIVER_NOT_LOADED:
-//                        printf("DLL Status Error!! DRIVER_NOT_LOADED\n");
-//                        goto winring0_free;
-//
-//                case OLS_DLL_DRIVER_NOT_FOUND:
-//                        printf("DLL Status Error!! DRIVER_NOT_FOUND\n");
-//                        goto winring0_free;
-//
-//                case OLS_DLL_DRIVER_UNLOADED:
-//                        printf("DLL Status Error!! DRIVER_UNLOADED\n");
-//                        goto winring0_free;
-//
-//                case OLS_DLL_DRIVER_NOT_LOADED_ON_NETWORK:
-//                        printf("DLL Status Error!! DRIVER_NOT_LOADED_ON_NETWORK\n");
-//                        goto winring0_free;
-//
-//                case OLS_DLL_UNKNOWN_ERROR:
-//                default:
-//                        printf("DLL Status Error!! UNKNOWN_ERROR\n");
-//                        goto winring0_free;
-//                }
-//        }
-//
-//        {
-//                DWORD eax = 0, edx = 0;
-//                if (Rdmsr(0x620, &eax, &edx) == FALSE)
-//                        printf("rdmsr() failed\n");
-//
-//                printf("msr 0x620: 0x%08lx 0x%08lx\n", eax, edx);
-//        }
-//
-//        {
-//                DWORD eax = 0, edx = 0;
-//                if (Wrmsr(0xe2, eax, edx) == FALSE)
-//                        printf("wrmsr() failed\n");
-//        }
-//
-////        GetCurrentDirectory();
-////        OpenProcess()
-//
-//        if (tray_init(&tray)) {
-//                return 1;
-//        }
-//
-//        tray_loop(1);
-//
-//        console_deinit();
-//
-//winring0_free:
-//        DeinitializeOls();
-//
-//        return 0;
-//}
