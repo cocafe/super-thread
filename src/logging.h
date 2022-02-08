@@ -75,25 +75,25 @@
 #define LOG_COLOR_FATAL         FG_LT_RED
 
 #define LOG_LEVEL_VERBOSE       BIT(0)
-#define LOG_LEVEL_DBG           BIT(1)
+#define LOG_LEVEL_DEBUG         BIT(1)
 #define LOG_LEVEL_INFO          BIT(2)
 #define LOG_LEVEL_NOTICE        BIT(3)
 #define LOG_LEVEL_WARN          BIT(4)
-#define LOG_LEVEL_ERR           BIT(5)
+#define LOG_LEVEL_ERROR         BIT(5)
 #define LOG_LEVEL_FATAL         BIT(6)
 
-#define LOG_LEVEL_DEFAULT       (LOG_LEVEL_DBG    | \
+#define LOG_LEVEL_DEFAULT       (LOG_LEVEL_DEBUG  | \
                                  LOG_LEVEL_INFO   | \
                                  LOG_LEVEL_NOTICE | \
                                  LOG_LEVEL_WARN   | \
-                                 LOG_LEVEL_ERR    | \
+                                 LOG_LEVEL_ERROR  | \
                                  LOG_LEVEL_FATAL)
 
-#define LOG_LEVEL_ALL           (LOG_LEVEL_DBG    | \
+#define LOG_LEVEL_ALL           (LOG_LEVEL_DEBUG  | \
                                  LOG_LEVEL_INFO   | \
                                  LOG_LEVEL_NOTICE | \
                                  LOG_LEVEL_WARN   | \
-                                 LOG_LEVEL_ERR    | \
+                                 LOG_LEVEL_ERROR  | \
                                  LOG_LEVEL_FATAL  | \
                                  LOG_LEVEL_VERBOSE)
 
@@ -269,7 +269,7 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_debug(msg, ##fmt);                                \
                                                                                 \
-                if (!(g_logprint_level & LOG_LEVEL_DBG))                        \
+                if (!(g_logprint_level & LOG_LEVEL_DEBUG))                      \
                         break;                                                  \
                                                                                 \
                 __pr_wrapped(stdout, LOG_COLOR_DBG, "%s(): ", __func__);        \
@@ -339,7 +339,7 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 if (zlog_inited)                                                \
                         dzlog_error(msg, ##fmt);                                \
                                                                                 \
-                if (!(g_logprint_level & LOG_LEVEL_ERR))                        \
+                if (!(g_logprint_level & LOG_LEVEL_ERROR))                      \
                         break;                                                  \
                                                                                 \
                 __pr_wrapped(LOG_ERR_STREAM, LOG_COLOR_ERR, "%s(): ", __func__);\
