@@ -4,6 +4,7 @@
 #include "config.h"
 #include "logging.h"
 #include "sysinfo.h"
+#include "superthread.h"
 
 static char *proc_identity_type_strs[] = {
         [IDENTITY_NONE]                 = "none",
@@ -152,8 +153,6 @@ int usrcfg_root_key_create(jbuf_t *b)
 
         return 0;
 }
-
-static jbuf_t jbuf_usrcfg = { 0 };
 
 int profile_validate(profile_t *profile)
 {

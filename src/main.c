@@ -117,8 +117,6 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 goto exit_sysinfo;
         }
 
-        MB_MSG_INFO("PRESS TO START");
-
         if (g_console_hide)
                 console_hide();
 

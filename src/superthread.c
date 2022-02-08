@@ -13,8 +13,9 @@
 #define TRAY_MENU_PROFILES                      L"Profile"
 
 struct config g_cfg;
-uint32_t g_should_exit = 0;
 struct tray_menu *g_profile_menu;
+uint32_t g_should_exit;
+jbuf_t jbuf_usrcfg;
 
 optdesc_t opt_help = {
         .short_opt = 'h',
@@ -151,6 +152,19 @@ static void loglvl_update(struct tray_menu *m)
                 m->checked = 0;
 }
 
+static void save_click(struct tray_menu *m)
+{
+        char *path = g_cfg.json_path;
+        UNUSED_PARAM(m);
+
+        if (jbuf_save(&jbuf_usrcfg, path)) {
+                MB_MSG_ERR("failed to save json to \"%s\"", path);
+                return;
+        }
+
+        pr_info("saved json config: %s\n", path);
+}
+
 struct tray g_tray = {
         .icon = {
                 .path = NULL,
@@ -177,7 +191,7 @@ struct tray g_tray = {
                         },
                 },
                 { .separator = 1 },
-                { .name = L"Save", .disabled = 1 }, // TODO
+                { .name = L"Save", .on_click = save_click },
                 { .separator = 1 },
                 { .name = L"Quit", .on_click = quit_cb },
                 { .is_end = 1 }
