@@ -1520,16 +1520,20 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth, int argc, va
         case JKEY_TYPE_UINT:
         {
                 uint64_t d = 0;
+                char *hex_fmt = "\"0x%016jx\"";
 
                 switch (jkey->data.sz) {
                 case sizeof(uint8_t):
                         d = *(uint8_t *)ref;
+                        hex_fmt = "\"0x%02jx\"";
                         break;
                 case sizeof(uint16_t):
                         d = *(uint16_t *)ref;
+                        hex_fmt = "\"0x%04jx\"";
                         break;
                 case sizeof(uint32_t):
                         d = *(uint32_t *)ref;
+                        hex_fmt = "\"0x%08jx\"";
                         break;
 
                 case sizeof(uint64_t):
@@ -1547,7 +1551,7 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth, int argc, va
                         else
                                 printf_wrap(buf, buf_pos, buf_len, "null");
                 } else if (jkey->data.int_base == 16) {
-                        printf_wrap(buf, buf_pos, buf_len, "\"0x%016jx\"", d);
+                        printf_wrap(buf, buf_pos, buf_len, hex_fmt, d);
                 } else {
                         printf_wrap(buf, buf_pos, buf_len, "%ju", d);
                 }
@@ -1558,16 +1562,20 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth, int argc, va
         case JKEY_TYPE_INT:
         {
                 int64_t d = 0;
+                char *hex_fmt = "\"0x%016jx\"";
 
                 switch (jkey->data.sz) {
                 case sizeof(int8_t):
                         d = *(int8_t *)ref;
+                        hex_fmt = "\"0x%02jx\"";
                         break;
                 case sizeof(int16_t):
                         d = *(int16_t *)ref;
+                        hex_fmt = "\"0x%04jx\"";
                         break;
                 case sizeof(int32_t):
                         d = *(int32_t *)ref;
+                        hex_fmt = "\"0x%08jx\"";
                         break;
 
                 case sizeof(int64_t):
@@ -1580,7 +1588,7 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth, int argc, va
                 }
 
                 if (jkey->data.int_base == 16)
-                        printf_wrap(buf, buf_pos, buf_len, "\"0x%016jx\"", d);
+                        printf_wrap(buf, buf_pos, buf_len, hex_fmt, d);
                 else
                         printf_wrap(buf, buf_pos, buf_len, "%jd", d);
 
