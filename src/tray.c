@@ -5,7 +5,6 @@
 #include <winuser.h>
 #include <shellapi.h>
 
-#include <resource.h>
 #include "logging.h"
 #include "tray.h"
 

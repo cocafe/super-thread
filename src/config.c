@@ -230,8 +230,12 @@ int usrcfg_init(void)
         if ((err = usrcfg_root_key_create(jbuf)))
                 return err;
 
+        pr_info("load json config: %s\n", g_cfg.json_path);
+
         if ((err = jbuf_load(jbuf, g_cfg.json_path)))
                 return err;
+
+        pr_info("loaded config:\n");
 
         jbuf_traverse_print(jbuf);
 
@@ -244,24 +248,6 @@ int usrcfg_init(void)
 int usrcfg_deinit(void)
 {
         jbuf_deinit(&jbuf_usrcfg);
-
-        return 0;
-}
-
-int usrcfg_test(void)
-{
-        jbuf_t jbuf = { 0 };
-        const char *json = "../config/config.json";
-
-        usrcfg_root_key_create(&jbuf);
-
-        json_print(json);
-
-        jbuf_load(&jbuf, json);
-
-        jbuf_traverse_print(&jbuf);
-
-        jbuf_deinit(&jbuf);
 
         return 0;
 }

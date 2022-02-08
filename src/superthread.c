@@ -10,7 +10,7 @@
 #include "supervisor.h"
 #include "superthread.h"
 
-#define TRAY_MENU_PROFILES              L"Profile"
+#define TRAY_MENU_PROFILES                      L"Profile"
 
 struct config g_cfg;
 uint32_t g_should_exit = 0;
@@ -31,32 +31,14 @@ optdesc_t opt_help = {
         },
 };
 
-optdesc_t opt_verbose = {
-        .short_opt = 0,
-        .long_opt  = "verbose",
-        .has_arg   = no_argument,
-        .to_set    = 1,
-        .data      = &g_logprint_level,
-        .data_sz   = sizeof(g_logprint_level),
-        .data_def  = &(typeof(g_logprint_level)){0 },
-        .data_type = D_UNSIGNED,
-        .min       = 0,
-        .max       = 0,
-        .parse     = NULL,
-        .help      = {
-                "Verbose debug message",
-                NULL,
-        },
-};
-
 optdesc_t opt_console = {
         .short_opt = 0,
         .long_opt  = "console",
         .has_arg   = no_argument,
-        .to_set    = 1,
-        .data      = &g_console_host_init,
-        .data_sz   = sizeof(g_console_host_init),
-        .data_def  = &(typeof(g_console_host_init)){ 0 },
+        .to_set    = 0,
+        .data      = &g_console_hide,
+        .data_sz   = sizeof(g_console_hide),
+        .data_def  = &(typeof(g_console_hide)){ 1 },
         .data_type = D_UNSIGNED,
         .min       = 0,
         .max       = 0,
@@ -87,7 +69,6 @@ optdesc_t opt_json_path = {
 
 optdesc_t *g_opt_list[] = {
         &opt_help,
-        &opt_verbose,
         &opt_console,
         &opt_json_path,
         NULL,
@@ -128,7 +109,10 @@ static void console_show_click(struct tray_menu *m)
 
         if (m->checked) {
                 console_show();
-                pr_raw("<!> CLOSE THIS LOGGING WINDOW WILL TERMINATE PROGRAM <!>\n");
+
+                pr_raw("========================================================\n");
+                pr_raw("=== CLOSE THIS LOGGING WINDOW WILL TERMINATE PROGRAM ===\n");
+                pr_raw("========================================================\n");
 
                 return;
         }
