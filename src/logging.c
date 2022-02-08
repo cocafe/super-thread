@@ -13,8 +13,8 @@ uint32_t g_logprint_level = LOG_LEVEL_DEFAULT;
 
 #ifdef __WINNT__
 
-uint32_t g_console_host_init = 1;
-uint32_t g_console_hide = 0;
+uint32_t g_console_alloc = 1;
+uint32_t g_console_hide = 1;
 uint32_t g_console_is_hide;
 HWND g_console_hwnd = NULL;
 
@@ -165,7 +165,7 @@ int mb_printf(const char *title, uint32_t flags, const char *fmt, ...)
 int logging_init(void)
 {
 #ifdef __WINNT__
-        if (g_console_host_init) {
+        if (g_console_alloc) {
                 if (console_init())
                         return -1;
         }
@@ -177,7 +177,7 @@ int logging_init(void)
 int logging_exit(void)
 {
 #ifdef __WINNT__
-        if (g_console_host_init && console_deinit())
+        if (g_console_alloc && console_deinit())
                 return -1;
 #endif
 

@@ -122,7 +122,7 @@ extern uint32_t g_logprint_level;
 #ifdef __WINNT__
 #include <windows.h>
 
-extern uint32_t g_console_host_init;
+extern uint32_t g_console_alloc;
 extern uint32_t g_console_hide;
 extern uint32_t g_console_is_hide;
 extern HWND g_console_wnd;
