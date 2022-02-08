@@ -5,8 +5,6 @@
 #include "logging.h"
 #include "sysinfo.h"
 
-struct config g_cfg;
-
 static char *proc_identity_type_strs[] = {
         [IDENTITY_NONE]                 = "none",
         [IDENTITY_PROCESS_EXE]          = "process",
@@ -82,7 +80,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                 jbuf_grow_arr_setup(b, profile_arr, (void *)&g_cfg.profiles, &g_cfg.profile_cnt, sizeof(profile_t));
                 jbuf_offset_obj_open(b, profile_obj, NULL, 0);
 
-                jbuf_offset_add(b, strptr, "name", offsetof(profile_t, name));
+                jbuf_offset_add(b, wstrptr, "name", offsetof(profile_t, name));
                 jbuf_offset_add(b, bool, "enabled", offsetof(profile_t, enabled));
                 jbuf_offset_strval_add(b, "proc_prio", offsetof(profile_t, proc_prio), proc_prio_strs, NUM_PROC_PRIOS);
                 jbuf_offset_strval_add(b, "io_prio", offsetof(profile_t, io_prio), io_prio_strs, NUM_IO_PRIOS);
@@ -163,7 +161,7 @@ int profile_validate(profile_t *profile)
         uint32_t avail_node_map = GENMASK(nr_cpu_grp - 1, 0);
 
         if (profile->enabled == 0)
-                pr_info("profile [%s] is disabled\n", profile->name);
+                pr_info("profile [%ls] is disabled\n", profile->name);
 
         if (profile->sched_mode == SUPERVISOR_PROCESSES) {
                 profile->processes.node_map &= avail_node_map;
@@ -172,13 +170,13 @@ int profile_validate(profile_t *profile)
                 case PROC_BALANCE_BY_MAP:
                 case PROC_BALANCE_RR:
                         if (profile->processes.node_map == 0) {
-                                pr_err("profile [%s] node_map is not set which is needed for by_map\n",
+                                pr_err("profile [%ls] node_map is not set which is needed for by_map\n",
                                        profile->name);
                                 return -EINVAL;
                         }
 
                         if (profile->processes.affinity == 0) {
-                                pr_err("profile [%s] affinity is not set\n", profile->name);
+                                pr_err("profile [%ls] affinity is not set\n", profile->name);
                                 return -EINVAL;
                         }
 

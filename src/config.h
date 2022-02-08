@@ -77,7 +77,7 @@ struct supervisor_cfg {
 };
 
 struct profile {
-        char                   *name;
+        wchar_t                *name;
 
         uint32_t                enabled;
 
