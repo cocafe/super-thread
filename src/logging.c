@@ -14,28 +14,29 @@ uint32_t g_logprint_level = LOG_LEVEL_DEFAULT;
 #ifdef __WINNT__
 
 uint32_t g_console_host_init = 1;
+uint32_t g_console_hide = 0;
+uint32_t g_console_is_hide;
+HWND g_console_hwnd = NULL;
 
-int console_init(void)
+void console_show(void)
 {
-        if (AllocConsole() == 0) {
-                pr_err("AllocConsole(), err = %lu\n", GetLastError());
-                return -1;
-        }
+        if (!g_console_hwnd)
+                return;
 
-        return 0;
+        ShowWindow(g_console_hwnd, SW_NORMAL); // SW_RESTORE
+        g_console_is_hide = 0;
 }
 
-int console_deinit(void)
+void console_hide(void)
 {
-        if (FreeConsole() == 0) {
-                pr_err("FreeConsole(), err = %lu\n", GetLastError());
-                return -1;
-        }
+        if (!g_console_hwnd)
+                return;
 
-        return 0;
+        ShowWindow(g_console_hwnd, SW_HIDE);
+        g_console_is_hide = 1;
 }
 
-void console_stdio_redirect(void)
+static void console_stdio_redirect(void)
 {
         HANDLE ConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);
         int SystemOutput = _open_osfhandle((intptr_t)ConsoleOutput, _O_TEXT);
@@ -52,6 +53,36 @@ void console_stdio_redirect(void)
         freopen_s(&CInputHandle, "CONIN$", "r", stdin);
         freopen_s(&COutputHandle, "CONOUT$", "w", stdout);
         freopen_s(&CErrorHandle, "CONOUT$", "w", stderr);
+}
+
+int console_init(void)
+{
+        if (AllocConsole() == 0) {
+                pr_err("AllocConsole(), err = %lu\n", GetLastError());
+                return -1;
+        }
+
+        console_stdio_redirect();
+
+        g_console_hwnd = GetConsoleWindow();
+        if (!g_console_hwnd) {
+                pr_err("GetConsoleWindow() failed\n");
+                return -1;
+        }
+
+        g_console_is_hide = 0;
+
+        return 0;
+}
+
+int console_deinit(void)
+{
+        if (FreeConsole() == 0) {
+                pr_err("FreeConsole(), err = %lu\n", GetLastError());
+                return -1;
+        }
+
+        return 0;
 }
 
 void mb_wchar_show(char *title, char *content, size_t len, uint32_t flags)
@@ -137,8 +168,6 @@ int logging_init(void)
         if (g_console_host_init) {
                 if (console_init())
                         return -1;
-
-                console_stdio_redirect();
         }
 #endif
 
