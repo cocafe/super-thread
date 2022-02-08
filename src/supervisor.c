@@ -342,38 +342,6 @@ static int proc_group_affinity_set(HANDLE process, GROUP_AFFINITY *gf)
         return 0;
 }
 
-void affinity_test(DWORD pid)
-{
-        HANDLE process = OpenProcess(PROCESS_ALL_ACCESS |
-                                     PROCESS_QUERY_INFORMATION |
-                                     PROCESS_QUERY_LIMITED_INFORMATION,
-                                     FALSE,
-                                     pid);
-        GROUP_AFFINITY gf = { 0 };
-
-        if (!process)
-                return;
-
-        if (proc_group_affinity_get(process, &gf)) {
-                pr_err("proc_group_affinity_get() failed\n");
-                return;
-        }
-
-        if (gf.Mask == 0) {
-                pr_err("process is thread group affinity managed\n");
-                return;
-        }
-
-        memset(&gf, 0x00, sizeof(gf));
-
-        gf.Mask = 0xf;
-        gf.Group = 1;
-
-        proc_group_affinity_set(process, &gf);
-
-        CloseHandle(process);
-}
-
 #if 0
 int process_module_list(DWORD pid)
 {
@@ -777,7 +745,7 @@ int process_list_build(supervisor_t *sv)
                         continue;
                 }
 
-                pr_info("pid: %lu \"%ls\" matched profile \"%ls\"\n",
+                pr_info("pid: %lu \"%ls\" new process matched profile \"%ls\"\n",
                         pe32.th32ProcessID, pe32.szExeFile,
                         g_cfg.profiles[profile_idx].name);
 
@@ -802,7 +770,7 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                         proc_entry_t *entry = n->data;
                         proc_info_t *info = &entry->info;
 
-                        pr_info("bucket[%zu] === pid: %5zu name: \"%ls\" proc_prio: %hhu io_prio: %d\n",
+                        pr_dbg("bucket[%zu] === pid: %5zu name: \"%ls\" proc_prio: %hhu io_prio: %d\n",
                                 i, info->pid, info->name, info->proc_prio.PriorityClass, info->io_prio);
 
                         n = n->next;
@@ -864,6 +832,19 @@ int is_image_path_contains(HANDLE process, proc_info_t *info)
         return 1;
 }
 
+static void affinity_mask_limit(GROUP_AFFINITY *new_aff, uint64_t affinity, uint32_t group)
+{
+        struct cpu_grp_info *cpu_grp = &g_sys_info.cpu_grp[group];
+
+        affinity &= cpu_grp->grp_mask;
+        if (unlikely(affinity == 0))
+                affinity = cpu_grp->grp_mask;
+
+        memset(new_aff, 0x00, sizeof(GROUP_AFFINITY));
+        new_aff->Mask = affinity;
+        new_aff->Group = group;
+}
+
 static int process_sched_thread_affinity_set(DWORD tid, void *data)
 {
         proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->entry;
@@ -894,6 +875,8 @@ static int process_sched_thread_affinity_set(DWORD tid, void *data)
                 pr_verbose("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid, proc_name);
                 goto out;
         }
+
+        affinity_mask_limit(new_aff, new_aff->Mask, new_aff->Group);
 
         pr_raw("[tid: %5lu pid: %5zu \"%ls\"] set [group: %2hu affinity: 0x%016jx]\n",
                tid, pid, proc_name, new_aff->Group, new_aff->Mask);
@@ -927,8 +910,11 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entr
                         }
                 }
 
+                affinity_mask_limit(new_aff, new_aff->Mask, new_aff->Group);
+
                 pr_raw("[pid: %5zu \"%ls\"] set [group %hu affinity 0x%016jx]\n",
                        info->pid, info->name, new_aff->Group, new_aff->Mask);
+
                 err = proc_group_affinity_set(process, new_aff);
         } else {
                 struct thrd_aff_set_data data = {
@@ -977,20 +963,6 @@ static unsigned long node_map_next(unsigned long curr, unsigned long mask)
         return curr;
 }
 
-static void new_affinity_limit(GROUP_AFFINITY *new_aff, uint64_t affinity, uint32_t group)
-{
-        struct cpu_grp_info *cpu_grp = &g_sys_info.cpu_grp[group];
-
-        affinity &= cpu_grp->grp_mask;
-        if (unlikely(affinity == 0))
-                affinity = cpu_grp->grp_mask;
-
-        memset(new_aff, 0x00, sizeof(GROUP_AFFINITY));
-        new_aff->Mask = affinity;
-        new_aff->Group = group;
-}
-
-
 static int processes_sched_rr(supervisor_t *sv, proc_entry_t *entry, HANDLE process)
 {
         profile_t *profile = entry->profile;
@@ -1001,8 +973,8 @@ static int processes_sched_rr(supervisor_t *sv, proc_entry_t *entry, HANDLE proc
 
         val->node_map_next = node_map_next(val->node_map_next, node_map);
 
-        new_affinity_limit(&new_aff, profile->processes.affinity,
-                           find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next)));
+        affinity_mask_limit(&new_aff, profile->processes.affinity,
+                            find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next)));
 
         err = processes_sched_set_new_affinity(sv, entry, process, &new_aff);
 
@@ -1043,8 +1015,8 @@ static void thread_node_map_update(supervisor_t *sv, proc_entry_t *proc, GROUP_A
 
         val->node_map_next = node_map_next(val->node_map_next, node_map);
 
-        new_affinity_limit(new_aff, profile->threads.affinity,
-                           find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next)));
+        affinity_mask_limit(new_aff, profile->threads.affinity,
+                            find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next)));
 
 }
 
@@ -1136,6 +1108,8 @@ not_exist:
         if (thrd_entry && delete) {
                 tommy_node *n = &thrd_entry->node;
 
+                pr_dbg("[tid: %5lu pid: %5zu \"%ls\"] delete thread\n", tid, pid, proc_name);
+
                 tommy_hashtable_remove_existing(&proc->threads, n);
                 free(thrd_entry);
         }
@@ -1174,6 +1148,7 @@ static void dead_thread_entry_remove(supervisor_t *sv, proc_entry_t *proc_entry)
                         if (thrd_entry->last_update != sv->update_stamp) {
                                 pr_dbg("remove dead thread: tid: %5zu pid: %5zu \"%ls\"\n",
                                        thrd_entry->tid, thrd_entry->pid, proc_entry->info.name);
+
                                 tommy_hashtable_remove_existing(thrd_tbl, n);
                                 free(n->data);
                         }
@@ -1272,13 +1247,15 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
                 return -EINVAL;
         }
 
+        // XXX: some dead processes still can be opened
         process = OpenProcess(PROCESS_ALL_ACCESS |
                               PROCESS_QUERY_INFORMATION |
                               PROCESS_QUERY_LIMITED_INFORMATION,
                               FALSE,
                               info->pid);
         if (!process) {
-                pr_err("OpenProcess() failed for pid %zu \"%ls\"\n", info->pid, info->name);
+                pr_info("OpenProcess() failed, pid %zu \"%ls\", err=%lu, maybe dead?\n",
+                        info->pid, info->name, GetLastError());
                 return -ENOENT;
         }
 
@@ -1323,6 +1300,12 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
                 break;
         }
 
+        // update again after applying settings
+        if ((err = process_info_update(info, process))) {
+                pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
+                goto out;
+        }
+
         entry->is_new = 0;
         entry->oneshot = profile->oneshot;
 
@@ -1351,6 +1334,10 @@ static int profile_settings_apply(supervisor_t *sv)
 
                         err = __profile_settings_apply(sv, n->data);
                         if (err) {
+                                proc_entry_t *proc = n->data;
+                                pr_dbg("pid: %5zu \"%ls\" delete process\n",
+                                       proc->info.pid, proc->info.name);
+
                                 tommy_hashtable_remove_existing(tbl, n);
                                 proc_entry_free(n->data);
                         }
@@ -1609,11 +1596,10 @@ int supervisor_loop(supervisor_t *sv)
 //        if ((err = file_handle_search(sv)))
 //                return err;
 
-        printf("----------------------------------\n");
-
         profile_settings_apply(sv);
 
-        proc_hashit_iterate(proc_selected);
+        if (g_logprint_level & LOG_LEVEL_DEBUG)
+                proc_hashit_iterate(proc_selected);
 
         // dead processes will be detected and removed in next round
 
@@ -1632,9 +1618,11 @@ void *supervisor_woker(void *data)
                 if (sv->paused)
                         goto sleep;
 
-                printf("update_stamp: %d\n", sv->update_stamp);
+                pr_dbg("update_stamp: %d\n", sv->update_stamp);
 
                 supervisor_loop(sv);
+
+                pr_dbg("----------------------------------\n");
 
                 sv->update_stamp++;
                 if (unlikely(sv->update_stamp == 0)) // overflowed
