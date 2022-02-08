@@ -334,6 +334,112 @@ free_buf:
         free(buf);
 }
 
+#if defined __WINNT__ && defined SUBSYS_WINDOW
+void longopts_help_messagebox(optdesc_t **descs, size_t count)
+{
+        char *line, *buf = NULL;
+        size_t line_len, buf_len, buf_pos;
+        size_t i, s;
+
+        // find max parameter text length
+        for (i = 0, s = 0; i < count; i++) {
+                size_t t = 0;
+
+                if (descs[i]->short_opt)
+                        t += 1 + 1 + 1; // '-' 'o' ' '
+
+                t += 2 + strlen(descs[i]->long_opt) + 1; // '--' 'longopt' ' '
+
+                if (descs[i]->has_arg == required_argument)
+                        t += 4; // '<..>'
+
+                if (t > s)
+                        s = t;
+        }
+
+        line_len = s + 8; // 8 whitespaces
+        line = malloc(line_len);
+        if (!line) {
+                pr_err("failed to allocate memory\n");
+                return;
+        }
+
+        buf_pos = 0;
+        buf_len = 2048;
+        buf = calloc(buf_len, sizeof(char));
+        if (!buf) {
+                pr_err("failed to allocate memory\n");
+                return;
+        }
+
+        for (i = 0; i < count; i++) {
+                optdesc_t *d = descs[i];
+                size_t len = 0;
+                size_t j;
+
+                memset(line, 0x00, line_len);
+
+                // XXX: DO NOT use snprintf() with this string cat trick
+                if (d->short_opt)
+                        len += snprintf(line + len, line_len - len, "-%c ", d->short_opt);
+
+                len += sprintf(line + len, "--%s ", d->long_opt);
+
+                if (d->has_arg == required_argument)
+                        len += snprintf(line + len, line_len - len, "<..>");
+
+                snprintf_resize(&buf, &buf_pos, &buf_len, "    %-*s", (int)line_len, line);
+
+                if (d->help[0] == NULL) {
+                        printf("\n");
+                        continue;
+                }
+
+                snprintf_resize(&buf, &buf_pos, &buf_len, "%s\n", d->help[0]);
+
+                for (j = 1; d->help[j] != NULL; j++) {
+                        snprintf_resize(&buf, &buf_pos, &buf_len,
+                                 "    %-*s%s\n", (int)line_len, "", d->help[j]);
+                }
+
+                // if have option string values, aligned to \t\t
+                if (d->optstrs) {
+                        const optstr_t *v;
+
+                        for (v = &d->optstrs[0]; v->optval != NULL; v++) {
+                                snprintf_resize(&buf, &buf_pos, &buf_len,
+                                                "    %-*s\t\t%s",
+                                                (int)line_len, "", v->optval);
+
+                                if (v->desc)
+                                        snprintf_resize(&buf, &buf_pos, &buf_len, ": %s", v->desc);
+
+                                // print default option value
+                                // limited to integer option type
+                                if (d->data_def) {
+                                        uint64_t val;
+
+                                        if (ptr_unsigned_word_read(d->data_def, d->data_sz, &val)) {
+                                                pr_err("invalid data sz detected\n");
+                                                continue;
+                                        }
+
+                                        if ((size_t)val == (size_t)(v - &d->optstrs[0]))
+                                                snprintf_resize(&buf, &buf_pos, &buf_len, " (default)");
+                                }
+
+                                snprintf_resize(&buf, &buf_pos, &buf_len, "\n");
+                        }
+                }
+        }
+
+        mb_printf("HELP", MB_OK, "%s", buf);
+
+        free(line);
+        free(buf);
+}
+#endif
+
 struct option *longopts_make(optdesc_t **descs, size_t count)
 {
         struct option *opts;
@@ -431,7 +537,11 @@ int longopts_parse(int argc, char *argv[], optdesc_t **opt_list)
 
                 switch (c) {
                 case 'h': // --help will be trapped here, too
+#if defined __WINNT__ && defined SUBSYS_WINDOW
+                        longopts_help_messagebox(opt_list, optcnt);
+#else
                         longopts_help(opt_list, optcnt);
+#endif
                         ret = -EINVAL;
 
                         goto free_optfmt;
