@@ -46,6 +46,9 @@ void *realloc_safe(void *old_ptr, size_t old_sz, size_t new_sz)
                 return old_ptr;
 
         new_ptr = calloc(1, new_sz);
+        if (!new_ptr)
+                return NULL;
+
         if (new_sz >= old_sz)
                 memcpy(new_ptr, old_ptr, old_sz);
         else
@@ -54,6 +57,69 @@ void *realloc_safe(void *old_ptr, size_t old_sz, size_t new_sz)
         free(old_ptr);
 
         return new_ptr;
+}
+
+int vprintf_resize(char **buf, size_t *pos, size_t *len, const char *fmt, va_list arg)
+{
+        va_list arg2;
+        char cbuf;
+        char *sbuf = *buf;
+        int _len, ret;
+
+        va_copy(arg2, arg);
+        _len = vsnprintf(&cbuf, sizeof(cbuf), fmt, arg2);
+        va_end(arg2);
+
+        if (_len < 0)
+                return _len;
+
+        if (!sbuf) {
+                size_t append_len = _len + 2;
+
+                sbuf = calloc(append_len, sizeof(char));
+                if (!sbuf)
+                        return -ENOMEM;
+
+                *buf = sbuf;
+                *len = append_len;
+                *pos = 0;
+        } else {
+                size_t append_len = _len + 2;
+                size_t new_len = *len + append_len;
+
+                // do realloc
+                if (*pos + append_len > *len) {
+                        sbuf = realloc_safe(*buf, *len, new_len);
+                        if (!sbuf)
+                                return -ENOMEM;
+
+                        *buf = sbuf;
+                        *len = new_len;
+                }
+        }
+
+        sbuf = &((*buf)[*pos]);
+
+        ret = vsnprintf(sbuf, *len - *pos, fmt, arg);
+        if (ret < 0) {
+                return ret;
+        }
+
+        *pos += ret;
+
+        return ret;
+}
+
+int snprintf_resize(char **buf, size_t *pos, size_t *len, const char *fmt, ...)
+{
+        va_list ap;
+        int ret;
+
+        va_start(ap, fmt);
+        ret = vprintf_resize(buf, pos, len, fmt, ap);
+        va_end(ap);
+
+        return ret;
 }
 
 static const char *quad_bits_rep[] = {

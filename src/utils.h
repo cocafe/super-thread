@@ -367,6 +367,9 @@ static inline void hfree(void *ptr) { free(ptr); };
 
 void *realloc_safe(void *old_ptr, size_t old_sz, size_t new_sz);
 
+int vprintf_resize(char **buf, size_t *pos, size_t *len, const char *fmt, va_list arg);
+int snprintf_resize(char **buf, size_t *pos, size_t *len, const char *fmt, ...);
+
 //
 // iconv utils
 //
