@@ -7,14 +7,12 @@
 #include <winuser.h>
 #include <winternl.h>
 
-#include <resource.h>
 #include "utils.h"
 #include "config.h"
 #include "logging.h"
 #include "sysinfo.h"
 #include "supervisor.h"
 #include "config_opts.h"
-#include "tray.h"
 #include "superthread.h"
 
 static int __privilege_get(const wchar_t *priv_name)
@@ -121,6 +119,9 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         MB_MSG_INFO("PRESS TO START");
 
+        if (g_console_hide)
+                console_hide();
+
         if ((err = superthread_tray_init(ins))) {
                 MB_MSG_ERR("failed to init tray\n");
                 goto exit_usrcfg;
@@ -129,9 +130,6 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         supervisor_init(&g_sv);
 
         supervisor_run(&g_sv);
-
-        if (g_console_hide)
-                console_hide();
 
         wnd_msg_process(1);
 
