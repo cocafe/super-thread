@@ -89,7 +89,11 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         heap_init();
 
-        if ((err = wchar_longopts_parse(__argc, __wargv))) {
+#ifdef UNICODE
+        if ((err = wchar_longopts_parse(__argc, __wargv, g_opt_list))) {
+#else
+        if ((err = longopts_parse(__argc, __argv, g_opt_list))) {
+#endif
                 goto out;
         }
 

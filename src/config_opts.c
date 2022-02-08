@@ -17,82 +17,6 @@
 #include "config.h"
 #include "config_opts.h"
 
-optdesc_t opt_help = {
-        .short_opt = 'h',
-        .long_opt  = "help",
-        .has_arg   = no_argument,
-        .to_set    = 0,
-        .data      = NULL,
-        .min       = 0,
-        .max       = 0,
-        .parse     = NULL,
-        .help      = {
-                "This help message",
-                NULL,
-        },
-};
-
-optdesc_t opt_verbose = {
-        .short_opt = 0,
-        .long_opt  = "verbose",
-        .has_arg   = no_argument,
-        .to_set    = 1,
-        .data      = &g_logprint_level,
-        .data_sz   = sizeof(g_logprint_level),
-        .data_def  = &(typeof(g_logprint_level)){0 },
-        .data_type = D_UNSIGNED,
-        .min       = 0,
-        .max       = 0,
-        .parse     = NULL,
-        .help      = {
-                "Verbose debug message",
-                NULL,
-        },
-};
-
-optdesc_t opt_console = {
-        .short_opt = 0,
-        .long_opt  = "console",
-        .has_arg   = no_argument,
-        .to_set    = 1,
-        .data      = &g_console_host_init,
-        .data_sz   = sizeof(g_console_host_init),
-        .data_def  = &(typeof(g_console_host_init)){ 0 },
-        .data_type = D_UNSIGNED,
-        .min       = 0,
-        .max       = 0,
-        .parse     = NULL,
-        .help      = {
-                "Show debug console",
-                NULL,
-        },
-};
-
-optdesc_t opt_json_path = {
-        .short_opt = 'c',
-        .long_opt  = "config",
-        .has_arg   = required_argument,
-        .to_set    = 0,
-        .data      = g_cfg.json_path,
-        .data_sz   = sizeof(g_cfg.json_path),
-        .data_def  = "config.json",
-        .data_type = D_STRING,
-        .min       = 0,
-        .max       = 0,
-        .parse     = optarg_to_str,
-        .help      = {
-                "JSON config path",
-                NULL,
-        },
-};
-
-optdesc_t *opt_list[] = {
-        &opt_help,
-        &opt_verbose,
-        &opt_console,
-        &opt_json_path,
-};
-
 int optarg_to_int(void *data, char *optarg,
                   size_t vargc, ... /* uint32_t data_type, size_t data_sz,
  *                                     int64_t min, int64_t max */
@@ -421,6 +345,9 @@ struct option *longopts_make(optdesc_t **descs, size_t count)
                 return NULL;
 
         for (i = 0; i < count; i++) {
+                if (descs[i] == NULL)
+                        break;
+
                 opts[i].has_arg = descs[i]->has_arg;
                 opts[i].name    = descs[i]->long_opt;
                 opts[i].val     = descs[i]->short_opt;
@@ -436,13 +363,34 @@ struct option *longopts_make(optdesc_t **descs, size_t count)
         return opts;
 }
 
-int longopts_parse(int argc, char *argv[])
+static size_t opt_list_count(optdesc_t **list)
 {
-        size_t optcnt = ARRAY_SIZE(opt_list);
+        size_t i = 0;
+        optdesc_t *t;
+
+        for (t = list[i]; t; t = list[++i]);
+
+        return i;
+}
+
+/**
+ * longopts_parse()
+ *
+ * @param argc: argc
+ * @param argv: argv
+ * @param opt_list: must be NULL terminated
+ * @return 0 on success
+ */
+int longopts_parse(int argc, char *argv[], optdesc_t **opt_list)
+{
+        size_t optcnt = opt_list_count(opt_list);
         struct option *opts;
         char *optfmt;
         int ret = 0;
         int c;
+
+        if (optcnt == 0)
+                return -ENODATA;
 
         opts = longopts_make(opt_list, optcnt);
         if (!opts) {
@@ -505,7 +453,7 @@ int longopts_parse(int argc, char *argv[])
                         // __attribute__((fallthough));
                 default: // find descriptor of short option
                         if (!d) { // if not falling from long opt
-                                opt_desc_find(opt_list, ARRAY_SIZE(opt_list), c, &d);
+                                opt_desc_find(opt_list, optcnt, c, &d);
 
                                 if (!d) {
                                         pr_err("desc not defined for option \"-%c\"\n", c);
@@ -549,7 +497,7 @@ out:
 }
 
 #ifdef UNICODE
-int wchar_longopts_parse(int argc, wchar_t *wargv[])
+int wchar_longopts_parse(int argc, wchar_t *wargv[], optdesc_t **opt_list)
 {
         char **argv;
         int ret = 0;
@@ -569,7 +517,7 @@ int wchar_longopts_parse(int argc, wchar_t *wargv[])
                         return -EINVAL;
         }
 
-        ret = longopts_parse(argc, argv);
+        ret = longopts_parse(argc, argv, opt_list);
 
         for (int i = 0; i < argc; i++) {
                 if (argv[i])

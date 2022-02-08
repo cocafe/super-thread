@@ -97,10 +97,10 @@ int optarg_to_int(void *data, char *optarg, size_t vargc, ...);
 int optarg_to_str(void *data, char *optarg, size_t vargc, ...);
 int optstr_to_int(void *data, char *optarg, size_t vargc, ...);
 
-int longopts_parse(int argc, char *argv[]);
+int longopts_parse(int argc, char *argv[], optdesc_t **opt_list);
 
 #ifdef UNICODE
-int wchar_longopts_parse(int argc, wchar_t *wargv[]);
+int wchar_longopts_parse(int argc, wchar_t *wargv[], optdesc_t **opt_list);
 #endif
 
 #endif //__JJ_CONFIG_OPTS_H__

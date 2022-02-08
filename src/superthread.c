@@ -6,6 +6,7 @@
 #include "logging.h"
 #include "tray.h"
 #include "config.h"
+#include "config_opts.h"
 #include "supervisor.h"
 #include "superthread.h"
 
@@ -14,6 +15,83 @@
 struct config g_cfg;
 uint32_t g_should_exit = 0;
 struct tray_menu *g_profile_menu;
+
+optdesc_t opt_help = {
+        .short_opt = 'h',
+        .long_opt  = "help",
+        .has_arg   = no_argument,
+        .to_set    = 0,
+        .data      = NULL,
+        .min       = 0,
+        .max       = 0,
+        .parse     = NULL,
+        .help      = {
+                "This help message",
+                NULL,
+        },
+};
+
+optdesc_t opt_verbose = {
+        .short_opt = 0,
+        .long_opt  = "verbose",
+        .has_arg   = no_argument,
+        .to_set    = 1,
+        .data      = &g_logprint_level,
+        .data_sz   = sizeof(g_logprint_level),
+        .data_def  = &(typeof(g_logprint_level)){0 },
+        .data_type = D_UNSIGNED,
+        .min       = 0,
+        .max       = 0,
+        .parse     = NULL,
+        .help      = {
+                "Verbose debug message",
+                NULL,
+        },
+};
+
+optdesc_t opt_console = {
+        .short_opt = 0,
+        .long_opt  = "console",
+        .has_arg   = no_argument,
+        .to_set    = 1,
+        .data      = &g_console_host_init,
+        .data_sz   = sizeof(g_console_host_init),
+        .data_def  = &(typeof(g_console_host_init)){ 0 },
+        .data_type = D_UNSIGNED,
+        .min       = 0,
+        .max       = 0,
+        .parse     = NULL,
+        .help      = {
+                "Show debug console",
+                NULL,
+        },
+};
+
+optdesc_t opt_json_path = {
+        .short_opt = 'c',
+        .long_opt  = "config",
+        .has_arg   = required_argument,
+        .to_set    = 0,
+        .data      = g_cfg.json_path,
+        .data_sz   = sizeof(g_cfg.json_path),
+        .data_def  = "config.json",
+        .data_type = D_STRING,
+        .min       = 0,
+        .max       = 0,
+        .parse     = optarg_to_str,
+        .help      = {
+                "JSON config path",
+                NULL,
+        },
+};
+
+optdesc_t *g_opt_list[] = {
+        &opt_help,
+        &opt_verbose,
+        &opt_console,
+        &opt_json_path,
+        NULL,
+};
 
 static void quit_cb(struct tray_menu *m) {
         UNUSED_PARAM(m);
