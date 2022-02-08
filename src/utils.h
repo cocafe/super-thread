@@ -150,6 +150,8 @@
 
 #define INET_ADDR_SIZE          (sizeof(struct in6_addr))
 
+#define WCBUF_LEN               ARRAY_SIZE
+
 int pthread_mutex_multi_trylock(pthread_mutex_t *lock);
 int float_equal(float a, float b, float epsilon);
 int is_valid_ipaddr(char *ipstr, int ipver);
@@ -164,8 +166,17 @@ static inline int is_str_equal(char *a, char *b, int caseless)
         const int EQUAL = 1;
         const int NOT_EQUAL = 0;
 
-        size_t len_a = strlen(a);
-        size_t len_b = strlen(b);
+        size_t len_a;
+        size_t len_b;
+
+        if (!a || !b)
+                return NOT_EQUAL;
+
+        if (unlikely(a == b))
+                return EQUAL;
+
+        len_a = strlen(a);
+        len_b = strlen(b);
 
         if (len_a != len_b)
                 return NOT_EQUAL;
@@ -187,9 +198,17 @@ static inline int is_wstr_equal(wchar_t *a, wchar_t *b)
 {
         const int EQUAL = 1;
         const int NOT_EQUAL = 0;
+        size_t len_a;
+        size_t len_b;
 
-        size_t len_a = wcslen(a);
-        size_t len_b = wcslen(b);
+        if (!a || !b)
+                return NOT_EQUAL;
+
+        if (unlikely(a == b))
+                return EQUAL;
+
+        len_a = wcslen(a);
+        len_b = wcslen(b);
 
         if (len_a != len_b)
                 return NOT_EQUAL;
