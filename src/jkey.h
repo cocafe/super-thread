@@ -16,6 +16,7 @@
 typedef struct json_key jkey_t;
 typedef struct json_key_buf jbuf_t;
 typedef uint32_t jkey_bool_t;
+typedef int (*jbuf_traverse_cb)(jkey_t *jkey, int has_next, int depth, int argc, va_list arg);
 
 enum json_key_types {
         JKEY_TYPE_UNKNOWN = 0,
@@ -100,14 +101,18 @@ static inline unsigned is_cjson_type(uint32_t a, uint32_t b)
         return a & b;
 }
 
-int jbuf_load(jbuf_t *buf, const char *json_path);
+int jbuf_load(jbuf_t *jbuf, const char *path);
+int jbuf_save(jbuf_t *jbuf, const char *path);
 
 int jbuf_traverse_print(jbuf_t *b);
-int jbuf_traverse_recursive(jkey_t *jkey,
-                            int (*pre)(jkey_t *, int, int),
-                            int (*post)(jkey_t *, int, int),
-                            int has_next,
-                            int depth);
+int jbuf_traverse_snprintf(jbuf_t *b, char **buf, size_t *pos, size_t *len);
+int _jbuf_traverse_recursive(jkey_t *jkey,
+                             jbuf_traverse_cb pre,
+                             jbuf_traverse_cb post,
+                             int has_next,
+                             int depth,
+                             int argc,
+                             va_list arg);
 
 int jbuf_init(jbuf_t *b, size_t jk_cnt);
 int jbuf_deinit(jbuf_t *b);

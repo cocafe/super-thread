@@ -1359,28 +1359,28 @@ int jkey_cjson_load(jkey_t *root_key, cJSON *root_node)
         return jkey_cjson_load_recursive(root_key, root_node, 0);
 }
 
-int jbuf_load(jbuf_t *buf, const char *json_path)
+int jbuf_load(jbuf_t *jbuf, const char *path)
 {
-        jkey_t *root_key = jbuf_root_key_get(buf);
+        jkey_t *root_key = jbuf_root_key_get(jbuf);
         cJSON *root_node;
         char *text;
         int err;
 
-        if (!json_path || json_path[0] == '\0') {
+        if (!path || path[0] == '\0') {
                 pr_err("file path is empty\n");
                 return -ENODATA;
         }
 
-        text = file_read(json_path);
+        text = file_read(path);
         if (!text) {
-                pr_err("failed to read file: %s\n", json_path);
+                pr_err("failed to read file: %s\n", path);
                 return -EIO;
         }
 
         root_node = cJSON_Parse(text);
 
         if (!root_node) {
-                pr_err("cJSON failed to parse file: %s\n", json_path);
+                pr_err("cJSON failed to parse file: %s\n", path);
                 err = -EINVAL;
 
                 goto text_free;
@@ -1396,26 +1396,53 @@ text_free:
         return err;
 }
 
-int jbuf_traverse_print_pre(jkey_t *jkey, int has_next, int depth)
+static int printf_wrapper(char **buf, size_t *pos, size_t *len, const char *fmt, ...)
+{
+        va_list ap;
+        int ret;
+
+        UNUSED_PARAM(buf);
+        UNUSED_PARAM(pos);
+        UNUSED_PARAM(len);
+
+        va_start(ap, fmt);
+        ret = vprintf(fmt, ap);
+        va_end(ap);
+
+        fflush(stdout);
+
+        return ret;
+}
+
+int jbuf_traverse_print_pre(jkey_t *jkey, int has_next, int depth, int argc, va_list arg)
 {
         static char padding[32] = { [0 ... 31] = '\t' };
-        (void)has_next;
+        char **buf = NULL; size_t *buf_len = 0, *buf_pos = 0;
+        int (*printf_wrap)(char **buf, size_t *pos, size_t *len, const char *fmt, ...) = printf_wrapper;
+        UNUSED_PARAM(has_next);
 
-        printf("%.*s", depth, padding);
+        if (argc == 3) {
+               buf = va_arg(arg, char **);
+               buf_pos = va_arg(arg, size_t *);
+               buf_len = va_arg(arg, size_t *);
+               printf_wrap = snprintf_resize;
+        }
+
+        printf_wrap(buf, buf_pos, buf_len, "%.*s", depth, padding);
 
         if (jkey->key)
-                printf("\"%s\" : ", jkey->key);
+                printf_wrap(buf, buf_pos, buf_len, "\"%s\" : ", jkey->key);
 
         switch (jkey->type) {
         case JKEY_TYPE_OBJECT:
-                printf("{\n");
+                printf_wrap(buf, buf_pos, buf_len, "{\n");
                 break;
 
         case JKEY_TYPE_RO_ARRAY:
         case JKEY_TYPE_FIXED_ARRAY:
         case JKEY_TYPE_GROW_ARRAY:
         case JKEY_TYPE_LIST_ARRAY:
-                printf("[\n");
+                printf_wrap(buf, buf_pos, buf_len, "[\n");
                 break;
 
         default:
@@ -1425,25 +1452,35 @@ int jbuf_traverse_print_pre(jkey_t *jkey, int has_next, int depth)
         return 0;
 }
 
-int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
+int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth, int argc, va_list arg)
 {
         static char padding[32] = { [0 ... 31] = '\t' };
         void *ref = NULL;
         char *str_utf8 = NULL;
+        char **buf = NULL; size_t *buf_len = 0, *buf_pos = 0;
+        int (*printf_wrap)(char **buf, size_t *pos, size_t *len, const char *fmt, ...) = printf_wrapper;
+
+        if (argc == 3) {
+                buf = va_arg(arg, char **);
+                buf_pos = va_arg(arg, size_t *);
+                buf_len = va_arg(arg, size_t *);
+                printf_wrap = snprintf_resize;
+        }
+
 
         if (is_jkey_compound(jkey)) {
-                printf("%.*s", depth, padding);
+                printf_wrap(buf, buf_pos, buf_len, "%.*s", depth, padding);
 
                 switch (jkey->type) {
                 case JKEY_TYPE_OBJECT:
-                        printf("}");
+                        printf_wrap(buf, buf_pos, buf_len, "}");
                         break;
 
                 case JKEY_TYPE_RO_ARRAY:
                 case JKEY_TYPE_FIXED_ARRAY:
                 case JKEY_TYPE_GROW_ARRAY:
                 case JKEY_TYPE_LIST_ARRAY:
-                        printf("]");
+                        printf_wrap(buf, buf_pos, buf_len, "]");
                         break;
                 }
 
@@ -1458,7 +1495,7 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
         }
 
         if (!ref) {
-                printf("null");
+                printf_wrap(buf, buf_pos, buf_len, "null");
                 goto line_ending;
         }
 
@@ -1506,13 +1543,13 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
 
                 if (jkey->strval.map) {
                         if (d < jkey->strval.cnt)
-                                printf("\"%s\"", jkey->strval.map[d]);
+                                printf_wrap(buf, buf_pos, buf_len, "\"%s\"", jkey->strval.map[d]);
                         else
-                                printf("null");
+                                printf_wrap(buf, buf_pos, buf_len, "null");
                 } else if (jkey->data.int_base == 16) {
-                        printf("\"0x%016jx\"", d);
+                        printf_wrap(buf, buf_pos, buf_len, "\"0x%016jx\"", d);
                 } else {
-                        printf("%ju", d);
+                        printf_wrap(buf, buf_pos, buf_len, "%ju", d);
                 }
 
                 break;
@@ -1543,34 +1580,34 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
                 }
 
                 if (jkey->data.int_base == 16)
-                        printf("\"0x%016jx\"", d);
+                        printf_wrap(buf, buf_pos, buf_len, "\"0x%016jx\"", d);
                 else
-                        printf("%jd", d);
+                        printf_wrap(buf, buf_pos, buf_len, "%jd", d);
 
                 break;
         }
 
         case JKEY_TYPE_STRREF:
         case JKEY_TYPE_STRPTR:
-                printf("\"%s\"", (char *)ref);
+                printf_wrap(buf, buf_pos, buf_len, "\"%s\"", (char *)ref);
 
                 break;
 
         case JKEY_TYPE_STRBUF:
                 if (jkey->data.is_wchar)
-                        printf("\"%s\"", (char *)ref);
+                        printf_wrap(buf, buf_pos, buf_len, "\"%s\"", (char *)ref);
                 else
-                        printf("\"%.*s\"", (int)jkey->data.sz, (char *)ref);
+                        printf_wrap(buf, buf_pos, buf_len, "\"%.*s\"", (int)jkey->data.sz, (char *)ref);
 
                 break;
 
         case JKEY_TYPE_BOOL:
-                printf("%s", *(jkey_bool_t *)jkey->data.ref ? "true" : "false");
+                printf_wrap(buf, buf_pos, buf_len, "%s", *(jkey_bool_t *)jkey->data.ref ? "true" : "false");
 
                 break;
 
         case JKEY_TYPE_DOUBLE:
-                printf("%.4lf", *(double *)jkey->data.ref);
+                printf_wrap(buf, buf_pos, buf_len, "%.4lf", *(double *)jkey->data.ref);
 
                 break;
 
@@ -1584,18 +1621,19 @@ int jbuf_traverse_print_post(jkey_t *jkey, int has_next, int depth)
 
 line_ending:
         if (has_next)
-                printf(",");
+                printf_wrap(buf, buf_pos, buf_len, ",");
 
-        printf("\n");
-        fflush(stdout);
+        printf_wrap(buf, buf_pos, buf_len, "\n");
 
         return 0;
 }
 
 int jbuf_list_array_traverse(jkey_t *arr,
-                             int (*pre)(jkey_t *, int, int),
-                             int (*post)(jkey_t *, int, int),
-                             int depth)
+                             jbuf_traverse_cb pre,
+                             jbuf_traverse_cb post,
+                             int depth,
+                             int argc,
+                             va_list arg)
 {
         jkey_t *data_key = jkey_array_data_key_get(arr);
         struct list_head *head = arr->obj.base_ref;
@@ -1616,7 +1654,7 @@ int jbuf_list_array_traverse(jkey_t *arr,
 
                 jkey_list_array_ref_update(arr, data_key, container);
 
-                if ((err = jbuf_traverse_recursive(data_key, pre, post, !last_one, depth + 1)))
+                if ((err = _jbuf_traverse_recursive(data_key, pre, post, !last_one, depth + 1, argc, arg)))
                         return err;
         }
 
@@ -1624,9 +1662,11 @@ int jbuf_list_array_traverse(jkey_t *arr,
 }
 
 int jbuf_fixed_grow_array_traverse(jkey_t *arr,
-                                   int (*pre)(jkey_t *, int, int),
-                                   int (*post)(jkey_t *, int, int),
-                                   int depth)
+                                   jbuf_traverse_cb pre,
+                                   jbuf_traverse_cb post,
+                                   int depth,
+                                   int argc,
+                                   va_list arg)
 {
         jkey_t *data_key = jkey_array_data_key_get(arr);
         size_t ele_cnt = 0;
@@ -1651,7 +1691,7 @@ int jbuf_fixed_grow_array_traverse(jkey_t *arr,
                 if (jkey_fixed_grow_array_ref_update(arr, data_key, j))
                         break;
 
-                if ((err = jbuf_traverse_recursive(data_key, pre, post, !last_one, depth + 1)))
+                if ((err = _jbuf_traverse_recursive(data_key, pre, post, !last_one, depth + 1, argc, arg)))
                         return err;
         }
 
@@ -1659,32 +1699,37 @@ int jbuf_fixed_grow_array_traverse(jkey_t *arr,
 }
 
 int jbuf_array_traverse(jkey_t *arr,
-                        int (*pre)(jkey_t *, int, int),
-                        int (*post)(jkey_t *, int, int),
-                        int depth)
+                        jbuf_traverse_cb pre,
+                        jbuf_traverse_cb post,
+                        int depth,
+                        int argc,
+                        va_list arg)
 {
         int err = 0;
 
         if (arr->type == JKEY_TYPE_LIST_ARRAY) {
-                err = jbuf_list_array_traverse(arr, pre, post, depth);
+                err = jbuf_list_array_traverse(arr, pre, post, depth, argc, arg);
         } else {
-                err = jbuf_fixed_grow_array_traverse(arr, pre, post, depth);
+                err = jbuf_fixed_grow_array_traverse(arr, pre, post, depth, argc, arg);
         }
 
         return err;
 }
 
-int jbuf_traverse_recursive(jkey_t *jkey,
-                            int (*pre)(jkey_t *, int, int),
-                            int (*post)(jkey_t *, int, int),
-                            int has_next,
-                            int depth)
+int _jbuf_traverse_recursive(jkey_t *jkey,
+                             jbuf_traverse_cb pre,
+                             jbuf_traverse_cb post,
+                             int has_next,
+                             int depth,
+                             int argc,
+                             va_list arg)
 {
         int err = 0;
 
-        if (pre)
-                if ((err = pre(jkey, has_next, depth)))
+        if (pre) {
+                if ((err = pre(jkey, has_next, depth, argc, arg)))
                         return err == -ECANCELED ? 0 : err;
+        }
 
         for (size_t i = 0; i < jkey->child_cnt; i++) {
                 jkey_t *child = &(((jkey_t *)jkey->child)[i]);
@@ -1696,7 +1741,7 @@ int jbuf_traverse_recursive(jkey_t *jkey,
 
                 // fixed/grow/list array
                 if (is_cjson_type(jkey->cjson_type, cJSON_Array) && jkey->type != JKEY_TYPE_RO_ARRAY) {
-                        if ((err = jbuf_array_traverse(jkey, pre, post, depth)))
+                        if ((err = jbuf_array_traverse(jkey, pre, post, depth, argc, arg)))
                                 return err;
                 } else { // ro array/object/data
                         int last_one = 0;
@@ -1710,16 +1755,31 @@ int jbuf_traverse_recursive(jkey_t *jkey,
                         if ((err = jkey_child_arr_key_update(jkey)))
                                 return err;
 
-                        if ((err = jbuf_traverse_recursive(child, pre, post, !last_one, depth + 1)))
+                        if ((err = _jbuf_traverse_recursive(child, pre, post, !last_one, depth + 1, argc, arg)))
                                 return err;
                 }
         }
 
-        if (post)
-                if ((err = post(jkey, has_next, depth)))
+        if (post) {
+                if ((err = post(jkey, has_next, depth, argc, arg)))
                         return err == -ECANCELED ? 0 : err;
+        }
 
         return err;
+}
+
+static int _jbuf_traverse_print(jbuf_t *b, int argc, ...)
+{
+        va_list ap;
+        int ret;
+
+        va_start(ap, argc);
+        ret = _jbuf_traverse_recursive((void *) b->base,
+                                        jbuf_traverse_print_pre, jbuf_traverse_print_post,
+                                        0, 0, argc, ap);
+        va_end(ap);
+
+        return ret;
 }
 
 int jbuf_traverse_print(jbuf_t *b)
@@ -1727,9 +1787,33 @@ int jbuf_traverse_print(jbuf_t *b)
         if (!b)
                 return -EINVAL;
 
-        return jbuf_traverse_recursive((void *) b->base,
-                                       jbuf_traverse_print_pre, jbuf_traverse_print_post,
-                                       0, 0);
+        return _jbuf_traverse_print(b, 0);
+}
+
+int jbuf_traverse_snprintf(jbuf_t *b, char **buf, size_t *pos, size_t *len)
+{
+        if (!b)
+                return -EINVAL;
+
+        return _jbuf_traverse_print(b, 3, buf, pos, len);
+}
+
+int jbuf_save(jbuf_t *jbuf, const char *path)
+{
+        size_t len = 2048, pos = 0;
+        char *buf = calloc(len, sizeof(char));
+        int err;
+
+        if ((err = jbuf_traverse_snprintf(jbuf, &buf, &pos, &len)))
+                goto free;
+
+        if ((err = file_write(path, buf, pos)))
+                goto free;
+
+free:
+        free(buf);
+
+        return err;
 }
 
 int jbuf_init(jbuf_t *b, size_t jk_cnt)
@@ -1797,10 +1881,12 @@ int jkey_base_ref_free(jkey_t *jkey)
         return 0;
 }
 
-int jbuf_traverse_free_pre(jkey_t *jkey, int has_next, int depth)
+int jbuf_traverse_free_pre(jkey_t *jkey, int has_next, int depth, int argc, va_list arg)
 {
-        (void)has_next;
-        (void)depth;
+        UNUSED_PARAM(has_next);
+        UNUSED_PARAM(depth);
+        UNUSED_PARAM(argc);
+        UNUSED_PARAM(arg);
 
         // algorithm is deep-first, free compound object at the last (post cb)
         if (is_jkey_compound(jkey))
@@ -1831,10 +1917,12 @@ int jkey_list_array_free(jkey_t *arr)
         return 0;
 }
 
-int jbuf_traverse_free_post(jkey_t *jkey, int has_next, int depth)
+int jbuf_traverse_free_post(jkey_t *jkey, int has_next, int depth, int argc, va_list arg)
 {
-        (void)has_next;
-        (void)depth;
+        UNUSED_PARAM(has_next);
+        UNUSED_PARAM(depth);
+        UNUSED_PARAM(argc);
+        UNUSED_PARAM(arg);
 
         if (!is_jkey_compound(jkey))
                 return 0;
@@ -1858,15 +1946,27 @@ int jbuf_traverse_free_post(jkey_t *jkey, int has_next, int depth)
         return 0;
 }
 
+static int _jbuf_traverse_free(jbuf_t *b, int argc, ...)
+{
+        va_list ap;
+        int ret;
+
+        va_start(ap, argc);
+        ret = _jbuf_traverse_recursive((void *) b->base,
+                                        jbuf_traverse_free_pre,
+                                        jbuf_traverse_free_post,
+                                        0, 0, 0, ap);
+        va_end(ap);
+
+        return ret;
+}
+
 int jbuf_traverse_free(jbuf_t *b)
 {
         if (!b)
                 return -EINVAL;
 
-        return jbuf_traverse_recursive((void *) b->base,
-                                       jbuf_traverse_free_pre,
-                                       jbuf_traverse_free_post,
-                                       0, 0);
+        return _jbuf_traverse_free(b, 0);
 }
 
 int jbuf_deinit(jbuf_t *b)
