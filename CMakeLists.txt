@@ -51,6 +51,11 @@ set(SOURCE_FILES
     src/myntapi.h
     src/sysinfo.c
     src/sysinfo.h
+    src/tray.c
+    src/tray.h
+    src/superthread.h
+    src/superthread.c
+    asset/resource.h
     )
 
 set(APPRES_OBJS)
@@ -69,6 +74,7 @@ endif()
 
 add_executable(${PROJECT_NAME} ${SOURCE_FILES} ${APPRES_OBJS})
 include_directories(tommyds)
+include_directories(asset)
 target_link_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/tommyds)
 target_link_libraries(${PROJECT_NAME} tommyds)
 target_link_libraries(${PROJECT_NAME} iconv)

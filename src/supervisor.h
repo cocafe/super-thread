@@ -74,6 +74,7 @@ struct supervisor {
 
         supervisor_val_t *vals;
         uint32_t          update_stamp;
+        uint8_t           paused;
 };
 
 struct thrd_aff_set_data {

@@ -1,4 +1,5 @@
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 1 					24 				"app.manifest"
-APP_ICON				ICON				"app.ico"
+101		              		ICON				"app.ico"
+102                                     ICON                            "app_disabled.ico"

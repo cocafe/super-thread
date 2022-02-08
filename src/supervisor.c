@@ -21,6 +21,7 @@
 #include "sysinfo.h"
 #include "supervisor.h"
 #include "myntapi.h"
+#include "superthread.h"
 
 supervisor_t g_sv = { 0 };
 
@@ -776,7 +777,7 @@ int process_list_build(supervisor_t *sv)
                         continue;
                 }
 
-                pr_info("pid: %lu \"%ls\" matched profile \"%s\"\n",
+                pr_info("pid: %lu \"%ls\" matched profile \"%ls\"\n",
                         pe32.th32ProcessID, pe32.szExeFile,
                         g_cfg.profiles[profile_idx].name);
 
@@ -1323,9 +1324,7 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         }
 
         entry->is_new = 0;
-
-        if (profile->oneshot)
-                entry->oneshot = 1;
+        entry->oneshot = profile->oneshot;
 
 out:
         CloseHandle(process);
@@ -1627,6 +1626,12 @@ void *supervisor_woker(void *data)
         sv->update_stamp = 1;
 
         while (1) {
+                if (g_should_exit)
+                        break;
+
+                if (sv->paused)
+                        goto sleep;
+
                 printf("update_stamp: %d\n", sv->update_stamp);
 
                 supervisor_loop(sv);
@@ -1635,10 +1640,13 @@ void *supervisor_woker(void *data)
                 if (unlikely(sv->update_stamp == 0)) // overflowed
                         sv->update_stamp = 1;
 
+sleep:
                 usleep(g_cfg.sampling_ms * 1000);
         }
 
         pthread_exit(NULL);
+
+        return NULL;
 }
 
 int supervisor_run(supervisor_t *sv)

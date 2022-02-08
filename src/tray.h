@@ -6,15 +6,18 @@
 #define ID_TRAY_FIRST                   (1000)
 
 struct tray_menu {
-        int                     is_end;
+        int                     is_end;         // is end separator
 
-        wchar_t                *name;
+        wchar_t                *name;           // must have
         UINT                    id;
-        int                     disabled;
-        int                     checked;
-        int                     separator;
+        int                     disabled;       // item disabled (grey out)
+        int                     checked;        // item checked
+        int                     separator;      // is separator
 
-        void                    (*cb)(struct tray_menu *);
+        // item click cb
+        void                    (*on_click)(struct tray_menu *);
+        // pre-update cb before showing menu
+        void                    (*pre_show)(struct tray_menu *);
 
         void                   *userdata;
 
@@ -37,14 +40,14 @@ struct tray_icon {
 };
 
 struct tray {
-        struct tray_data data;
-        struct tray_icon icon;
-        struct tray_menu *menu;
+        struct tray_data        data;
+        struct tray_icon        icon;
+        struct tray_menu       *menu;
 };
 
 int tray_init(struct tray *tray, HINSTANCE ins);
 int tray_loop(int blocking);
 void tray_update(struct tray *tray);
-void tray_exit();
+void tray_exit(struct tray *tray);
 
 #endif /* TRAY_H */

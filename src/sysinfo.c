@@ -117,6 +117,7 @@ out:
 int sysinfo_init(sys_info_t *info)
 {
         unsigned nr_grp = GetActiveProcessorGroupCount();
+        int err = 0;
 
         if (nr_grp == 0) {
                 pr_err("GetActiveProcessorGroupCount() failed\n");
@@ -148,7 +149,8 @@ int sysinfo_init(sys_info_t *info)
                 }
         }
 
-        cpu_topology_dump(info);
+        if ((err = cpu_topology_dump(info)))
+                return err;
 
         for (size_t i = 0; i < info->nr_cpu_grp; i++) {
                 struct cpu_grp_info *grp = &info->cpu_grp[i];

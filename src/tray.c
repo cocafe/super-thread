@@ -64,8 +64,10 @@ static LRESULT CALLBACK tray_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM
 
                         if (GetMenuItemInfo(hmenu, wparam, FALSE, &item)) {
                                 menu = (void *)item.dwItemData;
-                                if (menu && menu->cb != NULL)
-                                        menu->cb(menu);
+                                if (menu && menu->on_click != NULL) {
+                                        menu->on_click(menu);
+                                        tray_update(tray); // XXX: is this to complex? update current menu is fine?
+                                }
                         }
 
                         goto out;
@@ -100,6 +102,10 @@ HMENU tray_menu_update(struct tray_menu *m, UINT *id)
 
                 if (!m->name)
                         continue;
+
+                if (m->pre_show) {
+                        m->pre_show(m);
+                }
 
                 memset(&item, 0x00, sizeof(item));
                 item.cbSize = sizeof(MENUITEMINFO);
@@ -255,7 +261,7 @@ void tray_exit(struct tray *tray)
         }
 
         if (hmenu != 0) {
-                DestroyMenu(hmenu);
+                DestroyMenu(hmenu); // XXX: does not free sub-menu???
                 tray->data.hmenu = NULL;
         }
 

@@ -1,26 +1,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <stdarg.h>
 #include <errno.h>
-#include <unistd.h>
 
-#include <conio.h>
-#include <fcntl.h>
 #include <windows.h>
-#include <windowsx.h>
 #include <winuser.h>
-#include <winnls.h>
 #include <winternl.h>
-#include <fileapi.h>
-#include <TlHelp32.h>
 
+#include <resource.h>
 #include "utils.h"
 #include "config.h"
 #include "logging.h"
 #include "sysinfo.h"
 #include "supervisor.h"
 #include "config_opts.h"
+#include "tray.h"
+#include "superthread.h"
 
 static int __privilege_get(const wchar_t *priv_name)
 {
@@ -64,6 +59,25 @@ static int privilege_get(void)
         return err;
 }
 
+void wnd_msg_process(int blocking)
+{
+        MSG msg;
+
+        while (1) {
+                if (blocking) {
+                        GetMessage(&msg, NULL, 0, 0);
+                } else {
+                        PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
+                }
+
+                if (msg.message == WM_QUIT)
+                        break;
+
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+        }
+}
+
 int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                     LPWSTR cmdline, int cmdshow)
 {
@@ -71,7 +85,6 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         UNUSED_PARAM(prev_ins);
         UNUSED_PARAM(cmdline);
         UNUSED_PARAM(cmdshow);
-        MSG msg;
         int err;
 
         heap_init();
@@ -92,15 +105,10 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 goto exit_logging;
         }
 
-        sysinfo_init(&g_sys_info);
-
-        {
-//                HWND console_wnd = GetConsoleWindow();
-//                ShowWindow(console_wnd, SW_HIDE);
-//                ShowWindow(console_wnd, SW_NORMAL);
-//                ShowWindow(console_wnd, SW_RESTORE);
+        if ((err = sysinfo_init(&g_sys_info))) {
+                MB_MSG_ERR("failed to get system information");
+                goto exit_logging;
         }
-
 
         if ((err = usrcfg_init())) {
                 MB_MSG_ERR("failed to load config: \"%s\"", g_cfg.json_path);
@@ -109,17 +117,25 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         MB_MSG_INFO("PRESS TO START");
 
+        if ((err = superthread_tray_init(ins))) {
+                MB_MSG_ERR("failed to init tray\n");
+                goto exit_usrcfg;
+        }
+
         supervisor_init(&g_sv);
 
         supervisor_run(&g_sv);
 
-        while (GetMessage(&msg, NULL, 0, 0)) {
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-        }
+        if (g_console_hide)
+                console_hide();
+
+        wnd_msg_process(1);
 
         supervisor_deinit(&g_sv);
 
+        superthread_tray_deinit();
+
+exit_usrcfg:
         usrcfg_deinit();
 
 exit_sysinfo:
