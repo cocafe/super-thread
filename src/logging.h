@@ -144,6 +144,7 @@ int logging_exit(void);
 #define TT_ERROR                "ERROR"
 #define TT_WARNING              "WARNING"
 
+#define MB_MSG(fmt, ...)        mb_printf(TT_INFO, MB_OK, fmt, ##__VA_ARGS__)
 #define MB_MSG_ERR(fmt, ...)    mb_printf(TT_ERROR, MB_ICONERROR | MB_OK, fmt, ##__VA_ARGS__)
 #define MB_MSG_INFO(fmt, ...)   mb_printf(TT_INFO, MB_ICONINFORMATION | MB_OK, fmt, ##__VA_ARGS__)
 
