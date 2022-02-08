@@ -13,7 +13,7 @@ set(WIN32_UNICODE true)
 if (WIN32 AND MINGW)
         # -mconsole: console subsystem
         # -mwindows: window subsystem
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mwindows -static ")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mwindows -DSUBSYS_WINDOW -static ")
 
         if (WIN32_UNICODE)
                 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -municode -DUNICODE -D_UNICODE ")
