@@ -24,7 +24,8 @@
             "proc_prio": "unchanged", // [ rt, high, normal+, normal, normal-, low, idle, unchanged ]
             "io_prio": "unchanged",  // [ high, normal, low, very_low, unchanged ]
             "supervisor": {
-                "granularity": "processes", // [ proecsses, threads ]
+                "mode": "processes", // [ proecsses, threads ]
+                "oneshot": true, // only set affinity once for matched process
                 "processes": { // schedule base on matched processes
                     "node_map": "0xf0",  // by_map: only takes first set bit
                                          // rr: available nodes to do round-robin
@@ -33,6 +34,7 @@
                 },
                 "threads": { // schedule base on all threads of one matched process
                     "node_map": "0x0f", // available nodes for selection
+                    "hyper-thread_group": false,
                     "balance": "node_rr", // [ random, node_rr, cpu_rr, onload ]
                     "affinity": "0xffffffffffffffff" // -1 : all processors
                 }
