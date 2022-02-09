@@ -1234,12 +1234,13 @@ static int image_path_extract_file_name(DWORD pid, wchar_t *exe_name, size_t max
         return 0;
 }
 
-static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
+static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
 {
         proc_info_t *info = &entry->info;
         profile_t *profile = entry->profile;
         wchar_t exe_name[_MAX_FNAME] = { 0 };
         int err = 0;
+        DWORD status;
         HANDLE process;
 
         if (!profile) {
@@ -1256,6 +1257,17 @@ static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         if (!process) {
                 pr_info("OpenProcess() failed, pid %zu \"%ls\", err=%lu, maybe dead?\n",
                         info->pid, info->name, GetLastError());
+                return -ENOENT;
+        }
+
+        if (0 == GetExitCodeProcess(process, &status)) {
+                pr_info("GetExitCodeProcess() failed, pid %zu \"%ls\", err=%lu\n",
+                        info->pid, info->name, GetLastError());
+                return -EFAULT;
+        }
+
+        if (status != STILL_ACTIVE) {
+                pr_info("pid %zu \"%ls\" is no longer existed\n", info->pid, info->name);
                 return -ENOENT;
         }
 
@@ -1332,7 +1344,7 @@ static int profile_settings_apply(supervisor_t *sv)
                 while (n) {
                         tommy_node *next = n->next;
 
-                        err = __profile_settings_apply(sv, n->data);
+                        err = _profile_settings_apply(sv, n->data);
                         if (err) {
                                 proc_entry_t *proc = n->data;
                                 pr_dbg("pid: %5zu \"%ls\" delete process\n",
