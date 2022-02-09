@@ -75,6 +75,21 @@ int usrcfg_root_key_create(jbuf_t *b)
         jbuf_u32_add(b, "sampling_ms", &g_cfg.sampling_ms);
 
         {
+                void *logging = jbuf_obj_open(b, "logging");
+
+                jbuf_bool_add(b, "console", &g_console_show);
+                jbuf_bool_add(b, "verbose", &g_cfg.loglvl[_LOG_LEVEL_VERBOSE]);
+                jbuf_bool_add(b, "debug",   &g_cfg.loglvl[_LOG_LEVEL_DEBUG]);
+                jbuf_bool_add(b, "info",    &g_cfg.loglvl[_LOG_LEVEL_INFO]);
+                jbuf_bool_add(b, "error",   &g_cfg.loglvl[_LOG_LEVEL_NOTICE]);
+                jbuf_bool_add(b, "notice",  &g_cfg.loglvl[_LOG_LEVEL_WARN]);
+                jbuf_bool_add(b, "warning", &g_cfg.loglvl[_LOG_LEVEL_ERROR]);
+                jbuf_bool_add(b, "fatal",   &g_cfg.loglvl[_LOG_LEVEL_FATAL]);
+
+                jbuf_obj_close(b, logging);
+        }
+
+        {
                 void *profile_arr = jbuf_grow_arr_open(b, "profiles");
                 void *profile_obj;
 
@@ -219,6 +234,44 @@ int usrcfg_validate(void)
         return 0;
 }
 
+void usrcfg_loglvl_apply(void)
+{
+        for (size_t i = 0; i < NUM_LOG_LEVELS; i++) {
+                if (g_cfg.loglvl[i])
+                        g_logprint_level |= BIT(i);
+                else
+                        g_logprint_level &= ~BIT(i);
+        }
+}
+
+void usrcfg_loglvl_save(void)
+{
+        for (size_t i = 0; i < NUM_LOG_LEVELS; i++) {
+                if (g_logprint_level & BIT(i))
+                        g_cfg.loglvl[i] = 1;
+                else
+                        g_cfg.loglvl[i] = 0;
+        }
+}
+
+int usrcfg_save(void)
+{
+        int err = 0;
+
+        usrcfg_loglvl_save();
+
+        return err;
+}
+
+int usrcfg_apply(void)
+{
+        int err = 0;
+
+        usrcfg_loglvl_apply();
+
+        return err;
+}
+
 int usrcfg_init(void)
 {
         jbuf_t *jbuf = &jbuf_usrcfg;
@@ -239,6 +292,9 @@ int usrcfg_init(void)
         jbuf_traverse_print(jbuf);
 
         if ((err = usrcfg_validate()))
+                return err;
+
+        if ((err = usrcfg_apply()))
                 return err;
 
         return 0;

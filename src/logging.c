@@ -14,7 +14,7 @@ uint32_t g_logprint_level = LOG_LEVEL_DEFAULT;
 #ifdef __WINNT__
 
 uint32_t g_console_alloc = 1;
-uint32_t g_console_hide = 1;
+uint32_t g_console_show = 1;
 uint32_t g_console_is_hide;
 HWND g_console_hwnd = NULL;
 

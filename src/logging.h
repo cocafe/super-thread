@@ -74,13 +74,24 @@
 #define LOG_COLOR_ERR           FG_RED
 #define LOG_COLOR_FATAL         FG_LT_RED
 
-#define LOG_LEVEL_VERBOSE       BIT(0)
-#define LOG_LEVEL_DEBUG         BIT(1)
-#define LOG_LEVEL_INFO          BIT(2)
-#define LOG_LEVEL_NOTICE        BIT(3)
-#define LOG_LEVEL_WARN          BIT(4)
-#define LOG_LEVEL_ERROR         BIT(5)
-#define LOG_LEVEL_FATAL         BIT(6)
+enum {
+        _LOG_LEVEL_VERBOSE = 0,
+        _LOG_LEVEL_DEBUG,
+        _LOG_LEVEL_INFO,
+        _LOG_LEVEL_NOTICE,
+        _LOG_LEVEL_WARN,
+        _LOG_LEVEL_ERROR,
+        _LOG_LEVEL_FATAL,
+        NUM_LOG_LEVELS,
+};
+
+#define LOG_LEVEL_VERBOSE       BIT(_LOG_LEVEL_VERBOSE)
+#define LOG_LEVEL_DEBUG         BIT(_LOG_LEVEL_DEBUG)
+#define LOG_LEVEL_INFO          BIT(_LOG_LEVEL_INFO)
+#define LOG_LEVEL_NOTICE        BIT(_LOG_LEVEL_NOTICE)
+#define LOG_LEVEL_WARN          BIT(_LOG_LEVEL_WARN)
+#define LOG_LEVEL_ERROR         BIT(_LOG_LEVEL_ERROR)
+#define LOG_LEVEL_FATAL         BIT(_LOG_LEVEL_FATAL)
 
 #define LOG_LEVEL_DEFAULT       (LOG_LEVEL_DEBUG  | \
                                  LOG_LEVEL_INFO   | \
@@ -123,7 +134,7 @@ extern uint32_t g_logprint_level;
 #include <windows.h>
 
 extern uint32_t g_console_alloc;
-extern uint32_t g_console_hide;
+extern uint32_t g_console_show;
 extern uint32_t g_console_is_hide;
 extern HWND g_console_wnd;
 

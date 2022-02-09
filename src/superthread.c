@@ -37,9 +37,9 @@ optdesc_t opt_console = {
         .long_opt  = "console",
         .has_arg   = no_argument,
         .to_set    = 0,
-        .data      = &g_console_hide,
-        .data_sz   = sizeof(g_console_hide),
-        .data_def  = &(typeof(g_console_hide)){ 1 },
+        .data      = &g_console_show,
+        .data_sz   = sizeof(g_console_show),
+        .data_def  = &(typeof(g_console_show)){ 0 },
         .data_type = D_UNSIGNED,
         .min       = 0,
         .max       = 0,
@@ -109,6 +109,7 @@ static void console_show_click(struct tray_menu *m)
         m->checked = !m->checked;
 
         if (m->checked) {
+                g_console_show = 1;
                 console_show();
 
                 pr_raw("========================================================\n");
@@ -118,6 +119,7 @@ static void console_show_click(struct tray_menu *m)
                 return;
         }
 
+        g_console_show = 0;
         console_hide();
 }
 
@@ -156,6 +158,11 @@ static void save_click(struct tray_menu *m)
 {
         char *path = g_cfg.json_path;
         UNUSED_PARAM(m);
+
+        if (usrcfg_save()) {
+                MB_MSG_ERR("usrcfg_save() failed\n");
+                return;
+        }
 
         if (jbuf_save(&jbuf_usrcfg, path)) {
                 MB_MSG_ERR("failed to save json to \"%s\"", path);

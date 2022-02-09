@@ -117,7 +117,7 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 goto exit_sysinfo;
         }
 
-        if (g_console_hide)
+        if (!g_console_show)
                 console_hide();
 
         if ((err = superthread_tray_init(ins))) {

@@ -4,6 +4,8 @@
 #include <minwindef.h>
 #include <pthread.h>
 
+#include "logging.h"
+
 #define MAX_PROC_GROUPS                 (8)
 
 enum proc_identity_type {
@@ -95,16 +97,18 @@ struct profile {
 
 struct config {
         uint32_t        sampling_ms;
+        uint32_t        loglvl[NUM_LOG_LEVELS];
+        char            json_path[MAX_PATH];
 
         profile_t      *profiles;
         size_t          profile_cnt;
-
-        char            json_path[MAX_PATH];
 };
 
 extern struct config g_cfg;
 
 int usrcfg_init(void);
 int usrcfg_deinit(void);
+int usrcfg_apply(void);
+int usrcfg_save(void);
 
 #endif // SUPER_THREAD_CONFIG_H
