@@ -82,6 +82,14 @@ static void quit_cb(struct tray_menu *m) {
         PostQuitMessage(0);
 }
 
+static void trigger_click(struct tray_menu *m) {
+        UNUSED_PARAM(m);
+
+        supervisor_trigger_once(&g_sv);
+
+        pr_info("TRIGGERED ONCE\n");
+}
+
 static void pause_click(struct tray_menu *m) {
         struct tray *t = m->userdata;
 
@@ -178,14 +186,15 @@ struct tray g_tray = {
                 .id = IDI_APP_ICON,
         },
         .menu = (struct tray_menu[]) {
-                { .name = L"Pause", .checked = 0, .pre_show = pause_update, .on_click = pause_click, .userdata = &g_tray },
+                { .name = L"Trigger Once", .on_click = trigger_click },
+                { .name = L"Pause", .pre_show = pause_update, .on_click = pause_click, .userdata = &g_tray },
                 { .separator = 1 },
                 { .name = TRAY_MENU_PROFILES, .disabled = 1, .submenu = NULL },
                 { .separator = 1 },
                 {
                         .name = L"Logging",
                         .submenu = (struct tray_menu[]) {
-                                { .name = L"Show", .checked = 1, .pre_show = console_show_update, .on_click = console_show_click },
+                                { .name = L"Show", .pre_show = console_show_update, .on_click = console_show_click },
                                 { .separator = 1 },
                                 { .name = L"Verbose", .pre_show = loglvl_update, .on_click = loglvl_click, .userdata = (void *)LOG_LEVEL_VERBOSE },
                                 { .name = L"Debug",   .pre_show = loglvl_update, .on_click = loglvl_click, .userdata = (void *)LOG_LEVEL_DEBUG   },

@@ -1,6 +1,11 @@
 #include <stdint.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
+#include <time.h>
+#include <errno.h>
 #include <pthread.h>
+#include <semaphore.h>
 
 #include <windows.h>
 #include <windowsx.h>
@@ -1620,10 +1625,14 @@ int supervisor_loop(supervisor_t *sv)
 
 void *supervisor_woker(void *data)
 {
+        struct timespec ts = { 0 };
         supervisor_t *sv = data;
+
         sv->update_stamp = 1;
 
         while (1) {
+                int err;
+
                 if (g_should_exit)
                         break;
 
@@ -1640,13 +1649,35 @@ void *supervisor_woker(void *data)
                 if (unlikely(sv->update_stamp == 0)) // overflowed
                         sv->update_stamp = 1;
 
+                clock_gettime(CLOCK_REALTIME, &ts);
+                ts.tv_sec += g_cfg.sampling_sec; // set next wake up point
+
 sleep:
-                usleep(g_cfg.sampling_ms * 1000);
+                // return -1 on failed with errno set
+                if ((err = sem_timedwait(&sv->sleeper, &ts))) {
+                        if (errno != ETIMEDOUT) {
+                                pr_err("sem_timedwait() failed, err=%d\n", err);
+                                usleep(2 * 1000 * 1000);
+                        }
+                }
         }
 
         pthread_exit(NULL);
 
         return NULL;
+}
+
+void supervisor_trigger_once(supervisor_t *sv)
+{
+        if (sv->tid_worker == 0)
+                return;
+
+        if (sv->paused)
+                return;
+
+        pthread_mutex_lock(&sv->trigger_lck);
+        sem_post(&sv->sleeper);
+        pthread_mutex_unlock(&sv->trigger_lck);
 }
 
 int supervisor_run(supervisor_t *sv)
@@ -1663,6 +1694,8 @@ int supervisor_init(supervisor_t *sv)
 {
         size_t profile_cnt = g_cfg.profile_cnt;
 
+        sem_init(&sv->sleeper, 0, 0);
+        pthread_mutex_init(&sv->trigger_lck, NULL);
         tommy_hashtable_init(&sv->proc_selected, PROC_HASH_TBL_BUCKET);
 
         sv->vals = NULL;
@@ -1684,6 +1717,8 @@ static void proc_selected_free(void *data)
 
 int supervisor_deinit(supervisor_t *sv)
 {
+        sem_post(&sv->sleeper);
+
         if (sv->tid_worker)
                 pthread_join(sv->tid_worker, NULL);
 
@@ -1692,6 +1727,9 @@ int supervisor_deinit(supervisor_t *sv)
 
         tommy_hashtable_foreach(&sv->proc_selected, proc_selected_free);
         tommy_hashtable_done(&sv->proc_selected);
+
+        pthread_mutex_destroy(&sv->trigger_lck);
+        sem_destroy(&sv->sleeper);
 
         return 0;
 }

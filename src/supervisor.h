@@ -1,6 +1,9 @@
 #ifndef SUPER_THREAD_SUPERVISOR_H
 #define SUPER_THREAD_SUPERVISOR_H
 
+#include <pthread.h>
+#include <semaphore.h>
+
 #include <tommy.h>
 #include "myntapi.h"
 
@@ -70,6 +73,9 @@ struct supervisor_val {
 
 struct supervisor {
         pthread_t         tid_worker;
+        pthread_mutex_t   trigger_lck;
+        sem_t             sleeper;
+
         tommy_hashtable   proc_selected;
 
         supervisor_val_t *vals;
@@ -88,5 +94,6 @@ extern supervisor_t g_sv;
 int supervisor_init(supervisor_t *sv);
 int supervisor_deinit(supervisor_t *sv);
 int supervisor_run(supervisor_t *sv);
+void supervisor_trigger_once(supervisor_t *sv);
 
 #endif //SUPER_THREAD_SUPERVISOR_H

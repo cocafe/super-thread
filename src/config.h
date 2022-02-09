@@ -96,7 +96,7 @@ struct profile {
 };
 
 struct config {
-        uint32_t        sampling_ms;
+        uint32_t        sampling_sec;
         uint32_t        loglvl[NUM_LOG_LEVELS];
         char            json_path[MAX_PATH];
 

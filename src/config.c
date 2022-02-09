@@ -72,7 +72,7 @@ int usrcfg_root_key_create(jbuf_t *b)
 
         root = jbuf_obj_open(b, NULL);
 
-        jbuf_u32_add(b, "sampling_ms", &g_cfg.sampling_ms);
+        jbuf_u32_add(b, "sampling_sec", &g_cfg.sampling_sec);
 
         {
                 void *logging = jbuf_obj_open(b, "logging");
