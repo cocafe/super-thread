@@ -943,9 +943,9 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
         if (tbl->count == 0)
                 return;
 
-        pr_raw("+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
-        pr_raw("| pid   | name               | proc prio | io prio | threaded | node | affinity           |\n");
-        pr_raw("+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
+        pr_raw("+------------+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
+        pr_raw("| profile    | pid   | name               | proc prio | io prio | threaded | node | affinity           |\n");
+        pr_raw("+------------+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
 
         for (size_t i = 0; i < tbl->bucket_max; i++) {
                 tommy_node *n = tbl->bucket[i];
@@ -953,12 +953,22 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                 while (n) {
                         proc_entry_t *entry = n->data;
                         proc_info_t *info = &entry->info;
+                        profile_t *profile = &g_cfg.profiles[entry->profile_idx];
                         uint8_t proc_prio = info->proc_prio.PriorityClass;
                         uint8_t io_prio = info->io_prio;
+                        wchar_t profile_name[11] = { 0 };
+                        wchar_t name[18] = { 0 };
 
-                        pr_raw("| %-5zu | %-18ls | %-9s | %-7s | %-8d | %-4d | 0x%016jx |\n",
+                        wcsncpy(profile_name, profile->name, WCBUF_LEN(profile_name));
+                        profile_name[WCBUF_LEN(profile_name) - 1] = L'\0';
+
+                        wcsncpy(name, info->name, WCBUF_LEN(name));
+                        name[WCBUF_LEN(name) - 1] = L'\0';
+
+                        pr_raw("| %-10ls | %-5zu | %-18ls | %-9s | %-7s | %-8d | %-4d | 0x%016jx |\n",
+                               profile_name,
                                info->pid,
-                               info->name,
+                               name,
                                proc_prio < MaxProcPrioClasses ? proc_prio_strs[proc_prio] : "ERR",
                                io_prio < MaxIoPriorityTypes ? io_prio_strs[io_prio] : "ERR",
                                info->use_thread_affinity,
@@ -969,7 +979,7 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                 }
         }
 
-        pr_raw("+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
+        pr_raw("+------------+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
 }
 
 int profile_proc_prio_set(profile_t *profile, HANDLE process)
