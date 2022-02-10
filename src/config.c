@@ -39,7 +39,7 @@ static char *io_prio_strs[] = {
 static char *proc_balance_strs[] = {
         [PROC_BALANCE_BY_MAP]           = "by_map",
         [PROC_BALANCE_RAND]             = "random",
-        [PROC_BALANCE_RR]               = "round_robin",
+        [PROC_BALANCE_RR]               = "node_rr",
         [PROC_BALANCE_ONLOAD]           = "onload",
 };
 

@@ -266,9 +266,57 @@ PROFILE_SIMPLE_SWITCH_TRAY_CB(enabled);
 PROFILE_SIMPLE_SWITCH_TRAY_CB(oneshot);
 PROFILE_SIMPLE_SWITCH_TRAY_CB(always_set);
 
+static void profile_mode_sub_menu_update(struct tray_menu *m) {
+        for (struct tray_menu *sub = m->submenu; sub; sub++) {
+                if (sub->is_end)
+                        break;
+
+                if (sub->name && sub->name[0] != L'\0')
+                        sub->userdata = m->userdata;
+        }
+}
+
+static void profile_mode_update(struct tray_menu *m)
+{
+        profile_t *profile = m->userdata;
+        size_t mode = (size_t)m->userdata2;
+
+        m->checked = profile->sched_mode == mode;
+}
+
+static void profile_mode_click(struct tray_menu *m)
+{
+        profile_t *profile = m->userdata;
+        size_t mode = (size_t)m->userdata2;
+
+        if (profile->sched_mode == mode)
+                return;
+
+        profile->sched_mode = mode;
+}
+
 static struct tray_menu profile_menu_template[] = {
         { .name = L"Enabled", .pre_show = profile_enabled_update, .on_click = profile_enabled_click },
         { .is_separator = 1 },
+        {
+                .name = L"Mode",
+                .pre_show = profile_mode_sub_menu_update,
+                .submenu = (struct tray_menu[]) {
+                        {
+                                .name = L"Processes",
+                                .pre_show = profile_mode_update,
+                                .on_click = profile_mode_click,
+                                .userdata2 = (void *)SUPERVISOR_PROCESSES,
+                        },
+                        {
+                                .name = L"Threads",
+                                .pre_show = profile_mode_update,
+                                .on_click = profile_mode_click,
+                                .userdata2 = (void *)SUPERVISOR_THREADS,
+                        },
+                        { .is_end = 1 },
+                },
+        },
         { .name = L"Oneshot", .pre_show = profile_oneshot_update, .on_click = profile_oneshot_click },
         { .name = L"Always Set", .pre_show = profile_always_set_update, .on_click = profile_always_set_click },
         { .is_end = 1 },

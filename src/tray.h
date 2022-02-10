@@ -20,6 +20,7 @@ struct tray_menu {
         void                    (*pre_show)(struct tray_menu *);
 
         void                   *userdata;
+        void                   *userdata2;
 
         struct tray_menu       *submenu;
 };
