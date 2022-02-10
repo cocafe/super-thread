@@ -2,7 +2,12 @@
 #define __JJ_CONFIG_OPTS_H__
 
 #include <stdarg.h>
+
+#ifdef __WINNT__
+#include "getopt.h"
+#else
 #include <getopt.h>
+#endif
 
 #ifdef UNICODE
 #include <iconv.h>

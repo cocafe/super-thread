@@ -2,10 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
-#include <unistd.h>
-#include <malloc.h>
 #include <string.h>
-#include <getopt.h>
 #include <limits.h>
 
 #ifdef UNICODE
@@ -14,7 +11,6 @@
 
 #include "utils.h"
 #include "logging.h"
-#include "config.h"
 #include "config_opts.h"
 
 int optarg_to_int(void *data, char *optarg,
@@ -188,7 +184,7 @@ int optfmt_alloc(char **buf, struct option *opts, size_t optcnt)
         // reserved for extra '\0'
         buf_len++;
 
-        *buf = (char *)calloc(buf_len, sizeof(char));
+        *buf = (char *)calloc(buf_len + 2, sizeof(char));
         if (!*buf)
                 return -ENOMEM;
 
@@ -446,7 +442,8 @@ struct option *longopts_make(optdesc_t **descs, size_t count)
         size_t i;
 
         // free of out this scope
-        opts = calloc(count, sizeof(struct option));
+        // struct option [] is required to be NULL terminated
+        opts = calloc(count + 1, sizeof(struct option));
         if (!opts)
                 return NULL;
 
@@ -478,6 +475,18 @@ static size_t opt_list_count(optdesc_t **list)
 
         return i;
 }
+
+static struct option long_opts[] = {
+        { "verbose",    no_argument,            NULL,  1   },
+        { "brief",      no_argument,            NULL,  0   },
+        { "long",       optional_argument,      NULL,           0   },
+        { "add",        no_argument,            NULL,           'a' },
+        { "append",     required_argument,      NULL,           'b' },
+        { "delete",     required_argument,      NULL,           'd' },
+        { "create",     required_argument,      NULL,           'c' },
+        { "file",       required_argument,      NULL,           'f' },
+        { 0,            0,                      0,              0   },
+};
 
 /**
  * longopts_parse()
