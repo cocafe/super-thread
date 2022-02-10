@@ -476,18 +476,6 @@ static size_t opt_list_count(optdesc_t **list)
         return i;
 }
 
-static struct option long_opts[] = {
-        { "verbose",    no_argument,            NULL,  1   },
-        { "brief",      no_argument,            NULL,  0   },
-        { "long",       optional_argument,      NULL,           0   },
-        { "add",        no_argument,            NULL,           'a' },
-        { "append",     required_argument,      NULL,           'b' },
-        { "delete",     required_argument,      NULL,           'd' },
-        { "create",     required_argument,      NULL,           'c' },
-        { "file",       required_argument,      NULL,           'f' },
-        { 0,            0,                      0,              0   },
-};
-
 /**
  * longopts_parse()
  *
