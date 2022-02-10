@@ -52,6 +52,7 @@ struct proc_entry {
 
         uint8_t         is_new;
         uint8_t         oneshot;
+        uint8_t         always_set;
 };
 
 struct procs_sched {

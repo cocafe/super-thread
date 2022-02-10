@@ -319,6 +319,17 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
                 __pr_wrapped(stdout, LOG_COLOR_INFO, msg, ##fmt);               \
         } while(0)
 
+#define pr_rawlvl(lvl, msg, fmt...)                                             \
+        do {                                                                    \
+                if (zlog_inited)                                                \
+                        dzlog_info(msg, ##fmt);                                 \
+                                                                                \
+                if (!(g_logprint_level & LOG_LEVEL_##lvl))                      \
+                        break;                                                  \
+                                                                                \
+                __pr_wrapped(stdout, LOG_COLOR_##lvl, msg, ##fmt);              \
+        } while(0)
+
 #define pr_info_once(msg, fmt...)                                               \
         do {                                                                    \
                 static uint8_t __t = 0;                                         \

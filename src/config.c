@@ -154,6 +154,7 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                         jbuf_offset_strval_add(b, "mode", offsetof(profile_t, sched_mode), supervisor_mode_strs, NUM_SUPERVISOR_GRANS);
                         jbuf_offset_add(b, bool, "oneshot", offsetof(profile_t, oneshot));
+                        jbuf_offset_add(b, bool, "always_set", offsetof(profile_t, always_set));
 
                         {
                                 void *processes_obj;

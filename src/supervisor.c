@@ -1047,15 +1047,17 @@ static int process_sched_thread_affinity_set(DWORD tid, void *data)
                 goto out;
         }
 
-        if (proc_aff->Group == curr_aff.Group && proc_aff->Mask == curr_aff.Mask) {
-                pr_verbose("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid, proc_name);
-                goto out;
+        if (!proc->is_new && !proc->always_set) {
+                if (proc_aff->Group == curr_aff.Group && proc_aff->Mask == curr_aff.Mask) {
+                        pr_verbose("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid, proc_name);
+                        goto out;
+                }
         }
 
         affinity_mask_limit(new_aff, new_aff->Mask, new_aff->Group);
 
-        pr_raw("[tid: %5lu pid: %5zu \"%ls\"] set [group: %2hu affinity: 0x%016jx]\n",
-               tid, pid, proc_name, new_aff->Group, new_aff->Mask);
+        pr_rawlvl(DEBUG, "[tid: %5lu pid: %5zu \"%ls\"] set [group: %2hu affinity: 0x%016jx]\n",
+                  tid, pid, proc_name, new_aff->Group, new_aff->Mask);
 
         if (0 == SetThreadGroupAffinity(thread, new_aff, NULL)) {
                 pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
@@ -1076,7 +1078,7 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entr
         int err;
 
         if (!info->use_thread_affinity) {
-                if (!entry->is_new) {
+                if (!entry->is_new && !entry->always_set) {
                         if (last_aff->Mask == info->curr_aff.Mask &&
                             last_aff->Group == info->curr_aff.Group) {
                                 pr_verbose("pid: %5zu \"%ls\" group affinity did not change, skip\n",
@@ -1088,8 +1090,8 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entr
 
                 affinity_mask_limit(new_aff, new_aff->Mask, new_aff->Group);
 
-                pr_raw("[pid: %5zu \"%ls\"] set [group %hu affinity 0x%016jx]\n",
-                       info->pid, info->name, new_aff->Group, new_aff->Mask);
+                pr_rawlvl(DEBUG, "[pid: %5zu \"%ls\"] set [group %hu affinity 0x%016jx]\n",
+                          info->pid, info->name, new_aff->Group, new_aff->Mask);
 
                 err = proc_group_affinity_set(process, new_aff);
         } else {
@@ -1254,16 +1256,20 @@ static int thread_node_rr_affinity_set(DWORD tid, void *data)
         } else { // old thread
                 GROUP_AFFINITY *last_aff = &thrd_entry->last_aff;
 
-                if (last_aff->Group == curr_aff.Group && last_aff->Mask == curr_aff.Mask) {
-                        pr_verbose("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid, proc_name);
-                        goto out;
+                if (!proc->is_new && !proc->always_set) {
+                        if (last_aff->Group == curr_aff.Group &&
+                            last_aff->Mask == curr_aff.Mask) {
+                                pr_verbose("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid,
+                                           proc_name);
+                                goto out;
+                        }
                 }
         }
 
         thread_node_map_update(sv, proc, &new_aff);
 
-        pr_raw("[tid: %5lu pid: %5zu \"%ls\"] set [group: %2hu affinity: 0x%016jx]\n",
-               tid, pid, proc_name, new_aff.Group, new_aff.Mask);
+        pr_rawlvl(DEBUG, "[tid: %5lu pid: %5zu \"%ls\"] set [group: %2hu affinity: 0x%016jx]\n",
+                  tid, pid, proc_name, new_aff.Group, new_aff.Mask);
 
         if (0 == SetThreadGroupAffinity(thrd_hdl, &new_aff, NULL)) {
                 pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
@@ -1417,7 +1423,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
                 goto out;
         }
 
-        // allow to disable profile on the fly
+        // allow disabling profile on the fly
         if (!profile->enabled)
                 goto out;
 
@@ -1464,6 +1470,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
 
         entry->is_new = 0;
         entry->oneshot = profile->oneshot;
+        entry->always_set = profile->always_set;
 
 out:
         entry->last_stamp = sv->update_stamp;

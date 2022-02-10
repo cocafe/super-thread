@@ -17,6 +17,10 @@ struct tray_menu *g_profile_menu;
 uint32_t g_should_exit;
 jbuf_t jbuf_usrcfg;
 
+//
+// long options
+//
+
 optdesc_t opt_help = {
         .short_opt = 'h',
         .long_opt  = "help",
@@ -74,6 +78,10 @@ optdesc_t *g_opt_list[] = {
         &opt_json_path,
         NULL,
 };
+
+//
+// tray gui
+//
 
 static void quit_cb(struct tray_menu *m) {
         UNUSED_PARAM(m);
@@ -188,14 +196,14 @@ struct tray g_tray = {
         .menu = (struct tray_menu[]) {
                 { .name = L"Trigger Once", .on_click = trigger_click },
                 { .name = L"Pause", .pre_show = pause_update, .on_click = pause_click, .userdata = &g_tray },
-                { .separator = 1 },
+                { .is_separator = 1 },
                 { .name = TRAY_MENU_PROFILES, .disabled = 1, .submenu = NULL },
-                { .separator = 1 },
+                { .is_separator = 1 },
                 {
                         .name = L"Logging",
                         .submenu = (struct tray_menu[]) {
                                 { .name = L"Show", .pre_show = console_show_update, .on_click = console_show_click },
-                                { .separator = 1 },
+                                { .is_separator = 1 },
                                 { .name = L"Verbose", .pre_show = loglvl_update, .on_click = loglvl_click, .userdata = (void *)LOG_LEVEL_VERBOSE },
                                 { .name = L"Debug",   .pre_show = loglvl_update, .on_click = loglvl_click, .userdata = (void *)LOG_LEVEL_DEBUG   },
                                 { .name = L"Info",    .pre_show = loglvl_update, .on_click = loglvl_click, .userdata = (void *)LOG_LEVEL_INFO    },
@@ -206,9 +214,9 @@ struct tray g_tray = {
                                 { .is_end = 1 },
                         },
                 },
-                { .separator = 1 },
+                { .is_separator = 1 },
                 { .name = L"Save", .on_click = save_click },
-                { .separator = 1 },
+                { .is_separator = 1 },
                 { .name = L"Quit", .on_click = quit_cb },
                 { .is_end = 1 }
         }
@@ -232,53 +240,37 @@ struct tray_menu *profile_menu_find(struct tray_menu *top_menu)
         return m;
 }
 
-static void profile_enabled_update(struct tray_menu *m)
-{
-        profile_t *profile = m->userdata;
-
-        if (profile->enabled)
-                m->checked = 1;
-        else
-                m->checked = 0;
+#define PROFILE_SIMPLE_SWITCH_TRAY_CB(prop)                     \
+static void profile_##prop##_update(struct tray_menu *m)        \
+{                                                               \
+        profile_t *profile = m->userdata;                       \
+                                                                \
+        if (profile->prop)                                      \
+                m->checked = 1;                                 \
+        else                                                    \
+                m->checked = 0;                                 \
+}                                                               \
+static void profile_##prop##_click(struct tray_menu *m)         \
+{                                                               \
+        profile_t *profile = m->userdata;                       \
+                                                                \
+        m->checked = !m->checked;                               \
+                                                                \
+        if (m->checked)                                         \
+                profile->prop = 1;                              \
+        else                                                    \
+                profile->prop = 0;                              \
 }
 
-static void profile_enabled_click(struct tray_menu *m)
-{
-        profile_t *profile = m->userdata;
-
-        m->checked = !m->checked;
-
-        if (m->checked)
-                profile->enabled = 1;
-        else
-                profile->enabled = 0;
-}
-
-static void profile_oneshot_update(struct tray_menu *m)
-{
-        profile_t *profile = m->userdata;
-
-        if (profile->oneshot)
-                m->checked = 1;
-        else
-                m->checked = 0;
-}
-
-static void profile_oneshot_click(struct tray_menu *m)
-{
-        profile_t *profile = m->userdata;
-
-        m->checked = !m->checked;
-
-        if (m->checked)
-                profile->oneshot = 1;
-        else
-                profile->oneshot = 0;
-}
+PROFILE_SIMPLE_SWITCH_TRAY_CB(enabled);
+PROFILE_SIMPLE_SWITCH_TRAY_CB(oneshot);
+PROFILE_SIMPLE_SWITCH_TRAY_CB(always_set);
 
 static struct tray_menu profile_menu_template[] = {
         { .name = L"Enabled", .pre_show = profile_enabled_update, .on_click = profile_enabled_click },
+        { .is_separator = 1 },
         { .name = L"Oneshot", .pre_show = profile_oneshot_update, .on_click = profile_oneshot_click },
+        { .name = L"Always Set", .pre_show = profile_always_set_update, .on_click = profile_always_set_click },
         { .is_end = 1 },
 };
 

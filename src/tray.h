@@ -6,13 +6,13 @@
 #define ID_TRAY_FIRST                   (1000)
 
 struct tray_menu {
-        int                     is_end;         // is end separator
+        int                     is_end;         // menu end mark
+        int                     is_separator;
 
         wchar_t                *name;           // must have
         UINT                    id;
         int                     disabled;       // item disabled (grey out)
         int                     checked;        // item checked
-        int                     separator;      // is separator
 
         // item click cb
         void                    (*on_click)(struct tray_menu *);
