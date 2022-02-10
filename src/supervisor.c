@@ -220,8 +220,7 @@ void proc_entry_init(proc_entry_t *entry, DWORD pid, wchar_t *proc_exe, size_t p
         info->pid = pid;
         wcsncpy(info->name, proc_exe, wcslen(proc_exe)); // check string len?
 
-        if (g_cfg.profiles[profile_idx].sched_mode == SUPERVISOR_THREADS)
-                tommy_hashtable_init(&entry->threads, THRD_HASH_TBL_BUCKET);
+        tommy_hashtable_init(&entry->threads, THRD_HASH_TBL_BUCKET);
 }
 
 void proc_threads_tbl_free(void *data)
@@ -232,10 +231,8 @@ void proc_threads_tbl_free(void *data)
 
 void proc_entry_free(proc_entry_t *entry)
 {
-        if (g_cfg.profiles[entry->profile_idx].sched_mode == SUPERVISOR_THREADS){
-                tommy_hashtable_foreach(&entry->threads, proc_threads_tbl_free);
-                tommy_hashtable_done(&entry->threads);
-        }
+        tommy_hashtable_foreach(&entry->threads, proc_threads_tbl_free);
+        tommy_hashtable_done(&entry->threads);
 
         free(entry);
 }
