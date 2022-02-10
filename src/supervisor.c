@@ -55,7 +55,7 @@ static int system_info_query(void **info, SYSTEM_INFORMATION_CLASS type, size_t 
         unsigned long needed = 0;
         int ret = 0;
 
-        if (!(*info)) {
+        if (info && !(*info)) {
                 pr_err("info must be empty\n");
                 return -EINVAL;
         }
@@ -498,7 +498,7 @@ static int process_pbi_read(HANDLE process, PROCESS_BASIC_INFORMATION **ppbi)
 {
         PROCESS_BASIC_INFORMATION *pbi;
         ULONG pbi_sz;
-        int err, nt_ret = 0;
+        int err = 0, nt_ret = 0;
 
         if (ppbi)
                 *ppbi = NULL;
