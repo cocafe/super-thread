@@ -169,6 +169,18 @@ void *jbuf_hex_s64_add(jbuf_t *b, char *key, int64_t *ref);
                 cookie = t;                                             \
         } while (0)
 
+#define jbuf_offset_objptr_open(buf, cookie, key, sz, offset)           \
+        do {                                                            \
+                void *t = jbuf_objptr_open(buf, key, NULL, sz);         \
+                if (!t) {                                               \
+                        cookie = NULL;                                  \
+                        break;                                          \
+                }                                                       \
+                                                                        \
+                jkey_base_ref_parent_set(buf, t, offset);               \
+                cookie = t;                                             \
+        } while (0)
+
 #define jbuf_array_data_key(buf, type) jbuf_offset_add(buf, type, NULL, 0)
 #define jbuf_array_obj_data_key(buf, cookie) jbuf_offset_obj_open(buf, cookie, NULL, 0)
 

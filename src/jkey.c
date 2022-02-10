@@ -43,15 +43,39 @@ char *jkey_type_strs[] = {
         [JKEY_TYPE_DOUBLE]       = "double",
 };
 
-static unsigned is_jkey_writable_array(jkey_t *jkey)
+static int is_jkey_writable_array(jkey_t *jkey)
 {
         return is_cjson_type(jkey->cjson_type, cJSON_Array) &&
                jkey->type != JKEY_TYPE_RO_ARRAY;
 }
 
-static unsigned is_jkey_compound(jkey_t *jkey)
+static int is_jkey_compound(jkey_t *jkey)
 {
         return is_cjson_type(jkey->cjson_type, cJSON_Compound);
+}
+
+static int is_jkey_ref_ptr(jkey_t *jkey)
+{
+        return jkey->data.ref_ptr || jkey->obj.base_ref_ptr;
+}
+
+static int is_jkey_ref_null(jkey_t *jkey)
+{
+        if (jkey->data.ref_ptr) {
+                if (jkey->data.ref)
+                        return (*(uint8_t **)jkey->data.ref == NULL) ? 1 : 0;
+                else
+                        return 1;
+        }
+
+        if (jkey->obj.base_ref_ptr) {
+                if (jkey->obj.base_ref)
+                        return (*(uint8_t **)jkey->obj.base_ref == NULL) ? 1 : 0;
+                else
+                        return 1;
+        }
+
+        return 0;
 }
 
 static int jbuf_grow(jbuf_t *b, size_t jk_cnt)
@@ -1733,6 +1757,9 @@ int _jbuf_traverse_recursive(jkey_t *jkey,
                              va_list arg)
 {
         int err = 0;
+
+        if (is_jkey_ref_ptr(jkey) && is_jkey_ref_null(jkey))
+                return 0;
 
         if (pre) {
                 if ((err = pre(jkey, has_next, depth, argc, arg)))
