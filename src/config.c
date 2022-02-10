@@ -119,6 +119,28 @@ int usrcfg_root_key_create(jbuf_t *b)
                                 jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), proc_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
                                 jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
 
+                                {
+                                        void *cmdl_obj;
+
+                                        jbuf_offset_objptr_open(b, cmdl_obj, "cmdline", sizeof(struct proc_identity), offsetof(struct proc_identity, cmdl));
+
+                                        jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), proc_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
+                                        jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
+
+                                        jbuf_obj_close(b, cmdl_obj);
+                                }
+
+                                {
+                                        void *hdl_obj;
+
+                                        jbuf_offset_objptr_open(b, hdl_obj, "file_handle", sizeof(struct proc_identity), offsetof(struct proc_identity, file_hdl));
+
+                                        jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), proc_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
+                                        jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
+
+                                        jbuf_obj_close(b, hdl_obj);
+                                }
+
                                 jbuf_obj_close(b, id_obj);
                         }
 

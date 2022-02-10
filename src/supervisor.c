@@ -100,151 +100,6 @@ void proc_entry_free(proc_entry_t *entry)
         free(entry);
 }
 
-#if 0
-static int process_processor_group_get(DWORD pid, uint16_t *group_cnt, uint16_t **group_arr)
-{
-        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
-                                     FALSE,
-                                     pid);
-        USHORT cnt;
-        USHORT *arr;
-        int err = 0;
-
-        if (!process)
-                return -ENOENT;
-
-        if (GetProcessGroupAffinity(process, &cnt, NULL) == FALSE) {
-                if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-                        err = -EFAULT;
-                        goto err_handle;
-                }
-        }
-
-        arr = calloc(cnt, sizeof(USHORT));
-        if (!arr) {
-                err = -ENOMEM;
-                goto err_handle;
-        }
-
-        if (FALSE == GetProcessGroupAffinity(process, &cnt, arr)) {
-                err = -EFAULT;
-                goto err_free;
-        }
-
-        if (group_cnt)
-                *group_cnt = cnt;
-
-        if (group_arr)
-                *group_arr = arr;
-
-        return err;
-
-err_free:
-        free(arr);
-
-err_handle:
-        CloseHandle(process);
-
-        return err;
-}
-
-int process_group_check(DWORD pid)
-{
-        uint16_t group_cnt = 0;
-        uint16_t *group_arr = NULL;
-        int err = 0;
-
-        if ((err = process_processor_group_get(pid, &group_cnt, &group_arr))) {
-                pr_err("GetProcessGroupAffinity() failed\n");
-                return err;
-        }
-
-        if (group_cnt > 1)
-                pr_info("pid %lu is already multi-group!\n", pid);
-
-        if (group_arr) {
-                pr_info("pid %lu currently on group: ", pid);
-                for (unsigned i = 0; i < group_cnt; i++) {
-                        pr_raw("%hu ", group_arr[i]);
-                }
-                pr_raw("\n");
-        }
-
-        if (group_arr)
-                free(group_arr);
-
-        return err;
-}
-
-int process_name_pid_resolve(char *name, size_t name_len, DWORD *pid)
-{
-        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        int err = 0;
-
-        if (snapshot == INVALID_HANDLE_VALUE) {
-                MB_FUNC_ERR();
-                return -EINVAL;
-        }
-
-        PROCESSENTRY32 pe32;
-        pe32.dwSize = sizeof(PROCESSENTRY32);
-        if (Process32First(snapshot, &pe32) == FALSE) {
-                err = -ENOENT;
-                goto out;
-        }
-
-        do {
-                size_t exe_len = _countof(pe32.szExeFile);
-
-                pr_info("pid: %6lu process name: %s\n", pe32.th32ProcessID, pe32.szExeFile);
-
-                if (iconv_locale_ok) {
-                        int e, ret;
-
-                        ret = iconv_strncmp(pe32.szExeFile, iconv_locale_cp(), exe_len,
-                                            name, ICONV_UTF8, name_len, &e);
-                        if (e)
-                                MB_MSG_ERR("iconv_strncmp() failed: %d\n", e);
-
-                        if (!ret) {
-                                if (pid)
-                                        *pid = pe32.th32ProcessID;
-                        }
-                } else {
-                        if (!strncmp(pe32.szExeFile, name, (exe_len > name_len) ? exe_len : name_len)) {
-                                if (pid)
-                                        *pid = pe32.th32ProcessID;
-                        }
-                }
-        } while (Process32Next(snapshot, &pe32));
-
-out:
-        CloseHandle(snapshot);
-
-        return err;
-}
-#endif
-
-int thread_group_affinity_set(DWORD tid, GROUP_AFFINITY *affinity)
-{
-        HANDLE thread = OpenThread(THREAD_SET_INFORMATION |
-                                   THREAD_QUERY_INFORMATION,
-                                   FALSE,
-                                   tid);
-
-        if (!thread) {
-                pr_err("OpenThread() failed, tid=%lu err=%lu\n", tid, GetLastError());
-                return 0; // thread might just be closed
-        }
-
-        if (0 == SetThreadGroupAffinity(thread, affinity, NULL))
-                pr_err("SetThreadGroupAffinity() failed, tid=%lu err=%lu\n", tid, GetLastError());
-
-        CloseHandle(thread);
-
-        return 0;
-}
-
 static int process_threads_iterate(DWORD pid, int (*func)(DWORD tid, void *), void *data)
 {
         HANDLE snap;
@@ -348,99 +203,65 @@ static int proc_group_affinity_set(HANDLE process, GROUP_AFFINITY *gf)
         return 0;
 }
 
-#if 0
-int process_module_list(DWORD pid)
+static int process_cmdl_read(HANDLE process, PROCESS_BASIC_INFORMATION *pbi, wchar_t **cmdl)
 {
-        HANDLE hModuleSnap;
-        MODULEENTRY32 me32;
-        int ret = 0;
+        PEB peb;
+        RTL_USER_PROCESS_PARAMETERS cmdl_info = { 0 };
+        size_t nread;
+        wchar_t *buf;
+        int err = 0;
 
-        hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid);
-        if (hModuleSnap == INVALID_HANDLE_VALUE) {
-                MB_FUNC_ERR();
-                return -EINVAL;
-        }
-
-        me32.dwSize = sizeof(MODULEENTRY32);
-
-        if (!Module32First(hModuleSnap, &me32)) {
-                MB_FUNC_ERR();
-                ret = -EFAULT;
-                goto out;
-        }
-
-        do {
-                pr_info("pid: %5lu module name: %s executable: %s \n",
-                        me32.th32ProcessID, me32.szModule, me32.szExePath);
-        } while (Module32Next(hModuleSnap, &me32));
-
-out:
-        CloseHandle(hModuleSnap);
-
-        return ret;
-}
-
-int process_thread_list(DWORD pid)
-{
-        HANDLE hThreadSnap;
-        THREADENTRY32 te32;
-        int ret = 0;
-
-        // @th32ProcessID: only for TH32CS_SNAPHEAPLIST/SNAPMODULE/SNAPMODULE32/SNAPALL
-        // TH32CS_SHAPTHREAD: always iterate whole system threads
-        hThreadSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        if (hThreadSnap == INVALID_HANDLE_VALUE) {
-                MB_FUNC_ERR();
-                return -EINVAL;
-        }
-
-        te32.dwSize = sizeof(THREADENTRY32);
-
-        if (!Thread32First(hThreadSnap, &te32)) {
-                MB_FUNC_ERR();
-                ret = -EINVAL;
-                goto out;
-        }
-
-        do {
-                if (te32.th32OwnerProcessID == pid) {
-                        pr_info("tid: %5lu base_prio: %ld delta_prio: %ld\n",
-                                te32.th32ThreadID, te32.tpBasePri, te32.tpDeltaPri);
-                }
-        } while (Thread32Next(hThreadSnap, &te32));
-
-out:
-        CloseHandle(hThreadSnap);
-
-        return ret;
-}
-#endif
-
-int process_cmdline_get(DWORD pid)
-{
-        HANDLE process, heap;
-        PROCESS_BASIC_INFORMATION *pbi;
-        ULONG pbi_sz;
-        int ret = 0, nt_ret;
-
-        process = OpenProcess(PROCESS_QUERY_INFORMATION |
-                              PROCESS_QUERY_LIMITED_INFORMATION |
-                              PROCESS_VM_READ,
-                              FALSE,
-                              pid);
-
-        if (process == NULL) {
-                pr_err("OpenProcess() failed, err=%lu\n", GetLastError());
+        if (0 == ReadProcessMemory(process, pbi->PebBaseAddress, &peb, sizeof(peb), &nread)) {
+                pr_dbg("ReadProcessMemory() failed on pbi->PebBaseAddress\n");
                 return -EFAULT;
         }
 
-        heap = GetProcessHeap();
-        pbi = HeapAlloc(heap, HEAP_ZERO_MEMORY, sizeof(PROCESS_BASIC_INFORMATION));
+        if (0 == ReadProcessMemory(process, peb.ProcessParameters, &cmdl_info, sizeof(cmdl_info), &nread)) {
+                pr_dbg("ReadProcessMemory() failed on peb.ProcessParameters\n");
+                return -EFAULT;
+        }
+
+        // this LENGTH is the MEMORY SIZE of the string
+        buf = halloc(cmdl_info.CommandLine.Length + 4);
+        if (!buf) {
+                pr_err("heap alloc %hu bytes failed\n", cmdl_info.CommandLine.Length);
+                return -EFAULT;
+        }
+
+        if (0 == ReadProcessMemory(process,
+                                   cmdl_info.CommandLine.Buffer,
+                                   buf,
+                                   cmdl_info.CommandLine.Length,
+                                   &nread)) {
+                pr_dbg("ReadProcessMemory() failed on cmdl_info.CommandLine.Buffer\n");
+                err = -EFAULT;
+                goto out;
+        }
+
+        if (cmdl)
+                *cmdl = buf;
+
+out:
+        if (err)
+                hfree(buf);
+
+        return err;
+}
+
+static int process_pbi_read(HANDLE process, PROCESS_BASIC_INFORMATION **ppbi)
+{
+        PROCESS_BASIC_INFORMATION *pbi;
+        ULONG pbi_sz;
+        int err, nt_ret = 0;
+
+        if (ppbi)
+                *ppbi = NULL;
+
+        pbi = halloc(sizeof(PROCESS_BASIC_INFORMATION));
 
         if (!pbi) {
                 pr_err("failed to allocate memory for PBI\n");
-                ret = -ENOMEM;
-                goto out_handle;
+                return -ENOMEM;
         }
 
         nt_ret = NtQueryInformationProcess(process,
@@ -449,11 +270,11 @@ int process_cmdline_get(DWORD pid)
                                            sizeof(PROCESS_BASIC_INFORMATION),
                                            &pbi_sz);
         if (nt_ret >= 0 && sizeof(PROCESS_BASIC_INFORMATION) < pbi_sz) {
-                HeapFree(heap, 0, pbi);
-                pbi = HeapAlloc(heap, HEAP_ZERO_MEMORY, pbi_sz);
+                hfree(pbi);
+                pbi = halloc(pbi_sz);
                 if (!pbi) {
                         pr_err("failed to allocate memory for PBI\n");
-                        goto out_handle;
+                        return -ENOMEM;
                 }
 
                 nt_ret = NtQueryInformationProcess(process,
@@ -465,66 +286,67 @@ int process_cmdline_get(DWORD pid)
 
         if (!NT_SUCCESS(nt_ret)) {
                 pr_err("NtQueryInformationProcess() err=%lu\n", GetLastError());
-                ret = -EFAULT;
-                goto out_free;
+                err = -EFAULT;
+                goto out;
         }
 
         if (!pbi->PebBaseAddress) {
                 pr_err("invalid PEB base address\n");
-                ret = -EINVAL;
-                goto out_free;
+                err = -EINVAL;
+                goto out;
         }
 
-        {
-                PEB peb;
-                RTL_USER_PROCESS_PARAMETERS cmdl_info;
-                size_t nread;
-                wchar_t *cmdl;
+        if (ppbi)
+                *ppbi = pbi;
 
-                if (0 == ReadProcessMemory(process, pbi->PebBaseAddress, &peb, sizeof(peb), &nread))
-                        goto out_free;
+out:
+        if (pbi && err)
+                hfree(pbi);
 
-                if (0 == ReadProcessMemory(process, peb.ProcessParameters, &cmdl_info, sizeof(cmdl_info), &nread))
-                        goto out_free;
+        return err;
+}
 
-                cmdl = HeapAlloc(heap, HEAP_ZERO_MEMORY, cmdl_info.CommandLine.Length);
-                if (!cmdl)
-                        goto out_free;
+/**
+ * process_cmdline_read() - read process's cmdline
+ *
+ * @param pid: pid
+ * @param cmdl: will be allocated if succeed, use hfree() to free externally
+ * @return 0 on success with @cmdl allocated, otherwise @cmdl will be NULL
+ */
+int process_cmdline_read(DWORD pid, wchar_t **cmdl)
+{
+        PROCESS_BASIC_INFORMATION *pbi;
+        HANDLE process;
+        int err = 0;
 
-                if (0 == ReadProcessMemory(process,
-                                           cmdl_info.CommandLine.Buffer,
-                                           cmdl,
-                                           cmdl_info.CommandLine.Length,
-                                           &nread)) {
-                        HeapFree(heap, 0, cmdl);
-                        goto out_free;
-                }
+        if (cmdl)
+                *cmdl = NULL;
 
-                {
-                        char utf8[256] = { 0 };
-                        char cp936[256] = { 0 };
+        process = OpenProcess(PROCESS_QUERY_INFORMATION |
+                              PROCESS_QUERY_LIMITED_INFORMATION |
+                              PROCESS_VM_READ,
+                              FALSE,
+                              pid);
 
-                        // this convert to utf8 but, with junk at the end
-//                        wcstombs(wcc, cmdl, sizeof(wcc) < cmdl_info.CommandLine.Length ? sizeof(wcc) : cmdl_info.CommandLine.Length);
-
-                        iconv_wc2utf8((void *)cmdl, cmdl_info.CommandLine.Length, utf8, sizeof(utf8));
-                        iconv_convert(utf8, strlen(utf8), ICONV_UTF8, ICONV_CP936, cp936, sizeof(cp936));
-
-                        pr_info("iconv utf8: %s\n", utf8);
-                        pr_info("iconv cp936: %s\n", cp936);
-                }
-
-                pr_info("pid: %lu cmdline: %.*ls\n", pid, cmdl_info.CommandLine.Length, cmdl);
+        if (process == NULL) {
+                pr_err("OpenProcess() failed, pid=%lu err=%lu\n", pid, GetLastError());
+                return -EFAULT;
         }
 
-out_free:
+        if ((err = process_pbi_read(process, &pbi)))
+                goto out_process;
+
+        if ((err = process_cmdl_read(process, pbi, cmdl)))
+                goto out_pbi;
+
+out_pbi:
         if (pbi)
-                HeapFree(heap, 0, pbi);
+                hfree(pbi);
 
-out_handle:
+out_process:
         CloseHandle(process);
 
-        return ret;
+        return err;
 }
 
 int process_io_prio_get(HANDLE process, IO_PRIORITY_HINT *io_prio)
@@ -635,10 +457,53 @@ int is_str_match_id(wchar_t *str, struct proc_identity *id)
         return 0;
 }
 
+int is_process_cmdline_matched(PROCESSENTRY32 *pe32, struct proc_identity *id)
+{
+        DWORD pid = pe32->th32ProcessID;
+        WCHAR *exe = pe32->szExeFile;
+        wchar_t *cmdl = NULL;
+        int matched = 0;
+
+        process_cmdline_read(pid, &cmdl);
+
+        if (!cmdl) {
+                pr_info("failed to read cmdline of pid: %lu \"%ls\"\n", pid, exe);
+                return 0;
+        }
+
+        if (is_str_match_id(cmdl, id))
+                matched = 1;
+
+        hfree(cmdl);
+
+        return matched;
+}
+
+int is_process_properties_matched(PROCESSENTRY32 *pe32, struct proc_identity *id)
+{
+        int matched = 0;
+
+        if (is_str_match_id(pe32->szExeFile, id)) {
+                matched = 1;
+
+                if (id->cmdl) {
+                        matched = 0;
+
+                        if (is_process_cmdline_matched(pe32, id->cmdl))
+                                matched = 1;
+                }
+
+                if (id->file_hdl) {
+                        // TODO:
+                        matched = 0;
+                }
+        }
+
+        return matched;
+}
+
 int is_profile_matched(PROCESSENTRY32 *pe32, size_t *profile_idx)
 {
-//        size_t pid = pe32->th32ProcessID;
-
         for (size_t i = 0; i < g_cfg.profile_cnt; i++) {
                 profile_t *profile = &g_cfg.profiles[i];
                 int matched = 0;
@@ -651,14 +516,23 @@ int is_profile_matched(PROCESSENTRY32 *pe32, size_t *profile_idx)
 
                         switch (profile->id->type) {
                         case IDENTITY_PROCESS_EXE:
-                                if (is_str_match_id(pe32->szExeFile, id)) {
+                                if (is_process_properties_matched(pe32, id)) {
                                         matched = 1;
-                                        goto out_id_cmp;
+                                        goto out_matched;
                                 }
 
                                 break;
 
                         case IDENTITY_CMDLINE:
+                                if (is_process_cmdline_matched(pe32, id)) {
+                                        matched = 1;
+                                        goto out_matched;
+                                }
+
+                                break;
+
+                        case IDENTITY_FILE_HANDLE:
+                                pr_notice("file handle is broken on system-wide search now\n");
                                 break;
 
                         default:
@@ -666,7 +540,7 @@ int is_profile_matched(PROCESSENTRY32 *pe32, size_t *profile_idx)
                         }
                 }
 
-out_id_cmp:
+out_matched:
                 if (matched) {
                         if (profile_idx)
                                 *profile_idx = i;

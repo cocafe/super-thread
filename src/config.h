@@ -70,6 +70,8 @@ struct proc_identity {
         uint32_t type;
         uint32_t filter;
         wchar_t *value;
+        struct proc_identity *cmdl;
+        struct proc_identity *file_hdl;
 };
 
 struct supervisor_cfg {
