@@ -1748,6 +1748,30 @@ int jbuf_array_traverse(jkey_t *arr,
         return err;
 }
 
+static int jkey_null_child_conut(jkey_t *parent)
+{
+        int sum = 0;
+        jkey_t *child;
+
+        for (size_t i = 0; i < parent->child_cnt; i++) {
+                child = &((jkey_t *)parent->child)[i];
+
+                if (is_jkey_compound(child)) {
+                        if (child->child_cnt)
+                                i += child->child_cnt;
+                }
+
+                if (is_jkey_ref_ptr(child) && is_jkey_ref_null(child)) {
+                        if (is_jkey_compound(child))
+                                sum += 1 + child->child_cnt; // 1: child self
+                        else
+                                sum++;
+                }
+        }
+
+        return sum;
+}
+
 int _jbuf_traverse_recursive(jkey_t *jkey,
                              jbuf_traverse_cb pre,
                              jbuf_traverse_cb post,
@@ -1757,9 +1781,15 @@ int _jbuf_traverse_recursive(jkey_t *jkey,
                              va_list arg)
 {
         int err = 0;
+        int null_child_cnt;
 
-        if (is_jkey_ref_ptr(jkey) && is_jkey_ref_null(jkey))
-                return 0;
+        if ((err = jkey_child_key_ref_update(jkey)))
+                return err;
+
+        if ((err = jkey_child_arr_key_update(jkey)))
+                return err;
+
+        null_child_cnt = jkey_null_child_conut(jkey);
 
         if (pre) {
                 if ((err = pre(jkey, has_next, depth, argc, arg)))
@@ -1781,14 +1811,11 @@ int _jbuf_traverse_recursive(jkey_t *jkey,
                 } else { // ro array/object/data
                         int last_one = 0;
 
-                        if (i + 1 >= jkey->child_cnt)
+                        if (i + 1 + null_child_cnt >= jkey->child_cnt)
                                 last_one = 1;
 
-                        if ((err = jkey_child_key_ref_update(jkey)))
-                                return err;
-
-                        if ((err = jkey_child_arr_key_update(jkey)))
-                                return err;
+                        if (is_jkey_ref_ptr(child) && is_jkey_ref_null(child))
+                                continue;
 
                         if ((err = _jbuf_traverse_recursive(child, pre, post, !last_one, depth + 1, argc, arg)))
                                 return err;
