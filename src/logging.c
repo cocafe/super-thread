@@ -57,6 +57,11 @@ static void console_stdio_redirect(void)
 
 int console_init(void)
 {
+        if (!g_console_alloc) {
+                g_console_is_hide = 1;
+                return 0;
+        }
+
         if (AllocConsole() == 0) {
                 pr_err("AllocConsole(), err = %lu\n", GetLastError());
                 return -1;
@@ -165,10 +170,8 @@ int mb_printf(const char *title, uint32_t flags, const char *fmt, ...)
 int logging_init(void)
 {
 #ifdef __WINNT__
-        if (g_console_alloc) {
-                if (console_init())
-                        return -1;
-        }
+        if (console_init())
+                return -1;
 #endif
 
         return 0;

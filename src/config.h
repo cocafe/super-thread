@@ -6,6 +6,9 @@
 
 #include "logging.h"
 
+#define SAMPLING_SEC_DEF                (10)
+#define JSON_CFG_PATH_DEF               "config.json"
+
 #define MAX_PROC_GROUPS                 (8)
 
 enum proc_identity_type {

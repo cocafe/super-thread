@@ -12,7 +12,11 @@
 
 #define TRAY_MENU_PROFILES                      L"Profile"
 
-struct config g_cfg;
+struct config g_cfg = {
+        .sampling_sec = SAMPLING_SEC_DEF,
+        .json_path = JSON_CFG_PATH_DEF,
+};
+
 struct tray_menu *g_profile_menu;
 uint32_t g_should_exit;
 jbuf_t jbuf_usrcfg;
@@ -38,18 +42,18 @@ optdesc_t opt_help = {
 
 optdesc_t opt_console = {
         .short_opt = 0,
-        .long_opt  = "console",
+        .long_opt  = "no-console",
         .has_arg   = no_argument,
         .to_set    = 0,
-        .data      = &g_console_show,
-        .data_sz   = sizeof(g_console_show),
-        .data_def  = &(typeof(g_console_show)){ 0 },
+        .data      = &g_console_alloc,
+        .data_sz   = sizeof(g_console_alloc),
+        .data_def  = &(typeof(g_console_alloc)){ 1 },
         .data_type = D_UNSIGNED,
         .min       = 0,
         .max       = 0,
         .parse     = NULL,
         .help      = {
-                "Show debug console",
+                "Disable console window",
                 NULL,
         },
 };
@@ -61,7 +65,7 @@ optdesc_t opt_json_path = {
         .to_set    = 0,
         .data      = g_cfg.json_path,
         .data_sz   = sizeof(g_cfg.json_path),
-        .data_def  = "config.json",
+        .data_def  = JSON_CFG_PATH_DEF,
         .data_type = D_STRING,
         .min       = 0,
         .max       = 0,
@@ -122,6 +126,9 @@ static void pause_update(struct tray_menu *m)
 
 static void console_show_click(struct tray_menu *m)
 {
+        if (!g_console_alloc)
+                return;
+
         m->checked = !m->checked;
 
         if (m->checked) {
@@ -141,6 +148,12 @@ static void console_show_click(struct tray_menu *m)
 
 static void console_show_update(struct tray_menu *m)
 {
+        if (!g_console_alloc) {
+                m->checked = 0;
+                m->disabled = 1;
+                return;
+        }
+
         if (g_console_is_hide)
                 m->checked = 0;
         else
