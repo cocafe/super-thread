@@ -24,7 +24,7 @@ struct thrd_entry {
         size_t          tid;
         size_t          pid;
         GROUP_AFFINITY  last_aff;
-        uint32_t        last_update;
+        uint32_t        last_stamp;
 
         // track change time
 };
@@ -48,6 +48,7 @@ struct proc_entry {
         size_t          profile_idx;
 
         GROUP_AFFINITY  last_aff;
+        uint32_t        last_stamp;
 
         uint8_t         is_new;
         uint8_t         oneshot;

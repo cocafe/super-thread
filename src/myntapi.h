@@ -3,13 +3,16 @@
 
 // some structs are taken from process hacker
 
-#define PROCESS_PRIORITY_CLASS_UNKNOWN 0
-#define PROCESS_PRIORITY_CLASS_IDLE 1
-#define PROCESS_PRIORITY_CLASS_NORMAL 2
-#define PROCESS_PRIORITY_CLASS_HIGH 3
-#define PROCESS_PRIORITY_CLASS_REALTIME 4
-#define PROCESS_PRIORITY_CLASS_BELOW_NORMAL 5
-#define PROCESS_PRIORITY_CLASS_ABOVE_NORMAL 6
+enum _PROC_PRIORITY_HINT {
+        ProcPrioClassUnknown = 0,
+        ProcPrioClassIdle,
+        ProcPrioClassNnormal,
+        ProcPrioClassHigh,
+        ProcPrioClassRealtime,
+        ProcPrioClassAboveNormal,
+        ProcPrioClassBelowNormal,
+        MaxProcPrioClasses,
+};
 
 typedef struct _PROCESS_PRIORITY_CLASS
 {

@@ -87,7 +87,7 @@ static void trigger_click(struct tray_menu *m) {
 
         supervisor_trigger_once(&g_sv);
 
-        pr_info("TRIGGERED ONCE\n");
+        pr_raw("TRIGGERED ONCE\n");
 }
 
 static void pause_click(struct tray_menu *m) {
@@ -177,7 +177,7 @@ static void save_click(struct tray_menu *m)
                 return;
         }
 
-        pr_info("saved json config: %s\n", path);
+        pr_raw("saved json config: %s\n", path);
 }
 
 struct tray g_tray = {

@@ -31,13 +31,13 @@
 supervisor_t g_sv = { 0 };
 
 static uint8_t priofile_proc_prio_cls[] = {
-        [PROC_PRIO_UNCHANGED]           = PROCESS_PRIORITY_CLASS_UNKNOWN,
-        [PROC_PRIO_IDLE]                = PROCESS_PRIORITY_CLASS_IDLE,
-        [PROC_PRIO_NORMAL]              = PROCESS_PRIORITY_CLASS_NORMAL,
-        [PROC_PRIO_HIGH]                = PROCESS_PRIORITY_CLASS_HIGH,
-        [PROC_PRIO_REALTIME]            = PROCESS_PRIORITY_CLASS_REALTIME,
-        [PROC_PRIO_BELOW_NORMAL]        = PROCESS_PRIORITY_CLASS_BELOW_NORMAL,
-        [PROC_PRIO_ABOVE_NORMAL]        = PROCESS_PRIORITY_CLASS_ABOVE_NORMAL,
+        [PROC_PRIO_UNCHANGED]           = ProcPrioClassUnknown,
+        [PROC_PRIO_IDLE]                = ProcPrioClassIdle,
+        [PROC_PRIO_NORMAL]              = ProcPrioClassNnormal,
+        [PROC_PRIO_HIGH]                = ProcPrioClassHigh,
+        [PROC_PRIO_REALTIME]            = ProcPrioClassRealtime,
+        [PROC_PRIO_BELOW_NORMAL]        = ProcPrioClassBelowNormal,
+        [PROC_PRIO_ABOVE_NORMAL]        = ProcPrioClassAboveNormal,
 };
 
 static int32_t profile_ioprio_ntval[] = {
@@ -72,6 +72,7 @@ void proc_entry_init(proc_entry_t *entry, DWORD pid, wchar_t *proc_exe, size_t p
         proc_info_t *info = &entry->info;
 
         entry->is_new = 1;
+        entry->last_stamp = 0;
 
         entry->profile = &g_cfg.profiles[profile_idx];
         entry->profile_idx = profile_idx;
@@ -768,19 +769,54 @@ out:
 
 void proc_hashit_iterate(tommy_hashtable *tbl)
 {
+        static const char *proc_prio_strs[] = {
+                [ProcPrioClassUnknown]          = "unknown",
+                [ProcPrioClassIdle]             = "idle",
+                [ProcPrioClassNnormal]          = "normal",
+                [ProcPrioClassHigh]             = "high",
+                [ProcPrioClassRealtime]         = "realtime",
+                [ProcPrioClassBelowNormal]      = "normal-",
+                [ProcPrioClassAboveNormal]      = "normal+",
+        };
+
+        static const char *io_prio_strs[] = {
+                [IoPriorityVeryLow]             = "very_low",
+                [IoPriorityLow]                 = "low",
+                [IoPriorityNormal]              = "normal",
+                [IoPriorityHigh]                = "high",
+                [IoPriorityCritical]            = "critical",
+        };
+
+        if (tbl->count == 0)
+                return;
+
+        pr_raw("+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
+        pr_raw("| pid   | name               | proc prio | io prio | threaded | node | affinity           |\n");
+        pr_raw("+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
+
         for (size_t i = 0; i < tbl->bucket_max; i++) {
                 tommy_node *n = tbl->bucket[i];
 
                 while (n) {
                         proc_entry_t *entry = n->data;
                         proc_info_t *info = &entry->info;
+                        uint8_t proc_prio = info->proc_prio.PriorityClass;
+                        uint8_t io_prio = info->io_prio;
 
-                        pr_dbg("bucket[%zu] === pid: %5zu name: \"%ls\" proc_prio: %hhu io_prio: %d\n",
-                                i, info->pid, info->name, info->proc_prio.PriorityClass, info->io_prio);
+                        pr_raw("| %-5zu | %-18ls | %-9s | %-7s | %-8d | %-4d | 0x%016jx |\n",
+                               info->pid,
+                               info->name,
+                               proc_prio < MaxProcPrioClasses ? proc_prio_strs[proc_prio] : "ERR",
+                               io_prio < MaxIoPriorityTypes ? io_prio_strs[io_prio] : "ERR",
+                               info->use_thread_affinity,
+                               info->curr_aff.Group,
+                               info->curr_aff.Mask);
 
                         n = n->next;
                 }
         }
+
+        pr_raw("+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
 }
 
 int profile_proc_prio_set(profile_t *profile, HANDLE process)
@@ -1105,7 +1141,7 @@ static int thread_node_rr_affinity_set(DWORD tid, void *data)
         memcpy(&thrd_entry->last_aff, &new_aff, sizeof(thrd_entry->last_aff));
 
 out:
-        thrd_entry->last_update = sv->update_stamp;
+        thrd_entry->last_stamp = sv->update_stamp;
 
         CloseHandle(thrd_hdl);
 
@@ -1150,7 +1186,7 @@ static void dead_thread_entry_remove(supervisor_t *sv, proc_entry_t *proc_entry)
 
                         thrd_entry_t *thrd_entry = n->data;
 
-                        if (thrd_entry->last_update != sv->update_stamp) {
+                        if (thrd_entry->last_stamp != sv->update_stamp) {
                                 pr_dbg("remove dead thread: tid: %5zu pid: %5zu \"%ls\"\n",
                                        thrd_entry->tid, thrd_entry->pid, proc_entry->info.name);
 
@@ -1268,33 +1304,35 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         if (0 == GetExitCodeProcess(process, &status)) {
                 pr_info("GetExitCodeProcess() failed, pid %zu \"%ls\", err=%lu\n",
                         info->pid, info->name, GetLastError());
-                return -EFAULT;
+                err = -EFAULT;
+                goto out;
         }
 
         if (status != STILL_ACTIVE) {
                 pr_info("pid %zu \"%ls\" is no longer existed\n", info->pid, info->name);
-                return -ENOENT;
+                err = -ENOENT;
+                goto out;
         }
 
         // allow to disable profile on the fly
         if (!profile->enabled)
                 goto out;
 
-        if (profile->oneshot && entry->oneshot)
-                goto out;
-
         if (image_path_extract_file_name(entry->info.pid, exe_name, _MAX_FNAME))
                 goto out;
+
+        if ((err = process_info_update(info, process))) {
+                pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
+                goto out;
+        }
 
         if (!entry->is_new && !is_wstr_equal(info->name, exe_name)) {
                 err = -EINVAL;
                 goto out;
         }
 
-        if ((err = process_info_update(info, process))) {
-                pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
+        if (profile->oneshot && entry->oneshot)
                 goto out;
-        }
 
         if ((err = profile_proc_prio_set(profile, process)))
                 goto out;
@@ -1318,15 +1356,15 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         }
 
         // update again after applying settings
-        if ((err = process_info_update(info, process))) {
+        if ((err = process_info_update(info, process)))
                 pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
-                goto out;
-        }
 
         entry->is_new = 0;
         entry->oneshot = profile->oneshot;
 
 out:
+        entry->last_stamp = sv->update_stamp;
+
         CloseHandle(process);
 
         return err;
@@ -1574,21 +1612,21 @@ int file_handle_search(supervisor_t *sv)
 
         for (ULONG i = 0; i < hinfo->Count; i++) {
                 SYSTEM_HANDLE_ENTRY *hdl = &hinfo->Handle[i];
-                DWORD pid = hdl->OwnerPid;
+                DWORD owner = hdl->OwnerPid;
                 HANDLE process = OpenProcess(PROCESS_ALL_ACCESS |
                                              PROCESS_QUERY_INFORMATION |
                                              PROCESS_QUERY_LIMITED_INFORMATION,
                                              FALSE,
-                                             pid);
+                                             owner);
                 if (!process) {
-                        pr_verbose("OpenProcess() failed for pid %lu, err=%lu\n", pid, GetLastError());
+                        pr_verbose("OpenProcess() failed for pid %lu, err=%lu\n", owner, GetLastError());
                         continue;
                 }
 
-                if (image_path_extract_file_name(pid, exe_name, _MAX_FNAME))
+                if (image_path_extract_file_name(owner, exe_name, _MAX_FNAME))
                         goto next_hdl;
 
-                if (is_pid_tracked(processes, pid, exe_name))
+                if (is_pid_tracked(processes, owner, exe_name))
                         goto next_hdl;
 
                 process_list_add_by_handle(processes, hdl, exe_name);
@@ -1630,6 +1668,8 @@ void *supervisor_woker(void *data)
 
         sv->update_stamp = 1;
 
+        pr_info("START\n");
+
         while (1) {
                 int err;
 
@@ -1639,11 +1679,9 @@ void *supervisor_woker(void *data)
                 if (sv->paused)
                         goto sleep;
 
-                pr_dbg("update_stamp: %d\n", sv->update_stamp);
+                pr_verbose("update_stamp: %d\n", sv->update_stamp);
 
                 supervisor_loop(sv);
-
-                pr_dbg("----------------------------------\n");
 
                 sv->update_stamp++;
                 if (unlikely(sv->update_stamp == 0)) // overflowed
