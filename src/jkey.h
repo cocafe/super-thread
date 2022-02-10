@@ -42,8 +42,9 @@ struct json_key {
 
         struct {
                 size_t          sz;                     // (int, strptr): @data.ref points to data block sz
-                // (strbuf): length of static allocated string buffer
-                // (strref): this should be 0
+                                                        // (strbuf): length of static allocated string buffer
+                                                        // (strref): this should be 0
+
                 void           *ref;                    // (data, obj): refer to data
                 ssize_t         ref_offs;               // offset address of parent's ref
                 uint8_t         ref_ptr;                // is @ref pointing to a pointer? (double pointer)
