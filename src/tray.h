@@ -5,6 +5,10 @@
 #define WC_TRAY_CLASS_NAME              L"TRAY"
 #define ID_TRAY_FIRST                   (1000)
 
+struct tray;
+
+typedef void (*tray_click_cb)(struct tray *tray, void *userdata);
+
 struct tray_menu {
         int                     is_end;         // menu end mark
         int                     is_separator;
@@ -27,10 +31,17 @@ struct tray_menu {
 
 struct tray_data {
         HINSTANCE       ins;
+
         WNDCLASSEX      wc;
+
         NOTIFYICONDATA  nid;
+
         HWND            hwnd;
         HMENU           hmenu;
+
+        void           *userdata;
+
+        struct timespec last_click;
 };
 
 struct tray_icon {
@@ -42,13 +53,20 @@ struct tray_icon {
 
 struct tray {
         struct tray_data        data;
+
         struct tray_icon        icon;
         struct tray_menu       *menu;
+
+        // tray icon click callback
+        tray_click_cb           lbtn_click;
+        tray_click_cb           lbtn_dblclick;
 };
 
 int tray_init(struct tray *tray, HINSTANCE ins);
 int tray_loop(int blocking);
 void tray_update(struct tray *tray);
 void tray_exit(struct tray *tray);
+int tray_click_cb_set(struct tray *tray, void *userdata,
+                      tray_click_cb lbtn_click, tray_click_cb lbtn_dblclick);
 
 #endif /* TRAY_H */

@@ -11,6 +11,7 @@
 static LRESULT CALLBACK tray_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
         struct tray *tray = (void *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        struct tray_data *data = &tray->data;
 
         switch (msg) {
         case WM_CLOSE:
@@ -22,11 +23,37 @@ static LRESULT CALLBACK tray_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM
                 goto out;
 
         case WM_TRAY_CALLBACK_MESSAGE:
-                if (!tray)
-                        break;
+                if (lparam == WM_LBUTTONUP) {
+                        struct timespec ts = { 0 };
+                        struct timespec *last = &data->last_click;
+                        struct timespec *curr = &ts;
 
-                if (lparam == WM_LBUTTONUP || lparam == WM_RBUTTONUP) {
-                        HMENU hmenu = tray->data.hmenu;
+                        clock_gettime(CLOCK_REALTIME, &ts);
+
+                        if (data->last_click.tv_sec == 0)
+                                goto single_click;
+
+                        if (curr->tv_sec - last->tv_sec >= 1)
+                                goto single_click;
+
+                        // within 750ms
+                        if ((curr->tv_nsec / 1000000UL) - (last->tv_nsec / 1000000UL) <= 750) {
+                                if (tray->lbtn_dblclick) {
+                                        tray->lbtn_dblclick(tray, data->userdata);
+                                        goto update_ts;
+                                }
+                        }
+
+single_click:
+                        if (tray->lbtn_click)
+                                tray->lbtn_click(tray, data->userdata);
+
+update_ts:
+                        memcpy(last, curr, sizeof(ts));
+
+                        goto out;
+                } else if (lparam == WM_RBUTTONUP) {
+                        HMENU hmenu = data->hmenu;
                         POINT p;
                         WORD cmd;
 
@@ -50,12 +77,9 @@ static LRESULT CALLBACK tray_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM
                 break;
 
         case WM_COMMAND:
-                if (!tray)
-                        break;
-
                 if (wparam >= ID_TRAY_FIRST) {
                         struct tray_menu *menu = NULL;
-                        HMENU hmenu = tray->data.hmenu;
+                        HMENU hmenu = data->hmenu;
                         MENUITEMINFO item = {
                                 .cbSize = sizeof(MENUITEMINFO),
                                 .fMask = MIIM_ID | MIIM_DATA,
@@ -237,6 +261,19 @@ int tray_init(struct tray *tray, HINSTANCE ins)
         Shell_NotifyIcon(NIM_ADD, nid);
 
         tray_update(tray);
+
+        return 0;
+}
+
+int tray_click_cb_set(struct tray *tray, void *userdata,
+                      tray_click_cb lbtn_click, tray_click_cb lbtn_dblclick)
+{
+        if (!tray)
+                return -EINVAL;
+
+        tray->lbtn_click = lbtn_click;
+        tray->lbtn_dblclick = lbtn_dblclick;
+        tray->data.userdata = userdata;
 
         return 0;
 }
