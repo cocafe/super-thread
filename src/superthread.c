@@ -76,10 +76,29 @@ optdesc_t opt_json_path = {
         },
 };
 
+optdesc_t opt_log_color = {
+        .short_opt = 0,
+        .long_opt  = "colored",
+        .has_arg   = no_argument,
+        .to_set    = 1,
+        .data      = &g_logprint_colored,
+        .data_sz   = sizeof(g_logprint_colored),
+        .data_def  = &(typeof(g_logprint_colored)){ 1 },
+        .data_type = D_UNSIGNED,
+        .min       = 0,
+        .max       = 0,
+        .parse     = NULL,
+        .help      = {
+                "Print with color",
+                NULL,
+        },
+};
+
 optdesc_t *g_opt_list[] = {
         &opt_help,
         &opt_console,
         &opt_json_path,
+        &opt_log_color,
         NULL,
 };
 
