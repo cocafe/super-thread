@@ -10,6 +10,7 @@
 #include "logging.h"
 
 uint32_t g_logprint_level = LOG_LEVEL_DEFAULT;
+uint32_t g_logprint_colored = 0;
 
 #ifdef __WINNT__
 

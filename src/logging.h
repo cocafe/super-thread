@@ -6,8 +6,8 @@
 #include "utils.h"
 
 #define LOG_ALWAYS_FLUSH
-//#define LOG_COLOR_ENABLED
-//#define LOG_LEVEL_COLORED
+#define LOG_COLOR_ENABLED
+#define LOG_LEVEL_COLORED
 #define LOG_ERR_STREAM          stdout
 //#define ZLOG_ENABLED
 
@@ -129,6 +129,7 @@ extern uint32_t zlog_inited;
 #endif
 
 extern uint32_t g_logprint_level;
+extern uint32_t g_logprint_colored;
 
 #ifdef __WINNT__
 #include <windows.h>
@@ -227,6 +228,12 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
  */
 #define ___pr_bg_color(fp, fg, bg, cr, msg, fmt...)     \
         do {                                            \
+                if (!g_logprint_colored)  {             \
+                        ___pr_wrapped(fp, 0,            \
+                                      msg, ##fmt);      \
+                        break;                          \
+                }                                       \
+                                                        \
                 fprintf(fp,                             \
                         "\033[" MACRO_TO_STR(fg) ";"    \
                         MACRO_TO_STR(bg) "m"            \
@@ -241,6 +248,12 @@ int mb_printf(const char *title, unsigned flags, const char *fmt, ...);
 
 #define __pr_color(fp, color, msg, fmt...)              \
         do {                                            \
+                if (!g_logprint_colored)  {             \
+                        ___pr_wrapped(fp, 0,            \
+                                      msg, ##fmt);      \
+                        break;                          \
+                }                                       \
+                                                        \
                 fprintf(fp,                             \
                         "\033[0;"                       \
                         MACRO_TO_STR(color) "m"         \
