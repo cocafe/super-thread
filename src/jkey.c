@@ -1783,6 +1783,9 @@ int _jbuf_traverse_recursive(jkey_t *jkey,
         int err = 0;
         int null_child_cnt;
 
+        if (is_jkey_ref_ptr(jkey) && is_jkey_ref_null(jkey))
+                return 0;
+
         if ((err = jkey_child_key_ref_update(jkey)))
                 return err;
 
@@ -1813,9 +1816,6 @@ int _jbuf_traverse_recursive(jkey_t *jkey,
 
                         if (i + 1 + null_child_cnt >= jkey->child_cnt)
                                 last_one = 1;
-
-                        if (is_jkey_ref_ptr(child) && is_jkey_ref_null(child))
-                                continue;
 
                         if ((err = _jbuf_traverse_recursive(child, pre, post, !last_one, depth + 1, argc, arg)))
                                 return err;
