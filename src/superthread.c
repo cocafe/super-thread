@@ -253,7 +253,7 @@ struct tray_menu *profile_menu_find(struct tray_menu *top_menu)
         return m;
 }
 
-#define PROFILE_SIMPLE_SWITCH_TRAY_CB(prop)                     \
+#define PROFILE_SINGLE_SWITCH_TRAY_CB(prop)                     \
 static void profile_##prop##_update(struct tray_menu *m)        \
 {                                                               \
         profile_t *profile = m->userdata;                       \
@@ -275,11 +275,30 @@ static void profile_##prop##_click(struct tray_menu *m)         \
                 profile->prop = 0;                              \
 }
 
-PROFILE_SIMPLE_SWITCH_TRAY_CB(enabled);
-PROFILE_SIMPLE_SWITCH_TRAY_CB(oneshot);
-PROFILE_SIMPLE_SWITCH_TRAY_CB(always_set);
+PROFILE_SINGLE_SWITCH_TRAY_CB(enabled);
+PROFILE_SINGLE_SWITCH_TRAY_CB(oneshot);
+PROFILE_SINGLE_SWITCH_TRAY_CB(always_set);
 
-static void profile_mode_sub_menu_update(struct tray_menu *m) {
+#define PROFILE_VALUE_SWITCH_TRAY_CB(prop, type)                \
+static void profile_##prop##_update(struct tray_menu *m)        \
+{                                                               \
+        profile_t *profile = m->userdata;                       \
+        type val = (type)((size_t)m->userdata2);                \
+                                                                \
+        m->checked = profile->prop == val;                      \
+}                                                               \
+static void profile_##prop##_click(struct tray_menu *m)         \
+{                                                               \
+        profile_t *profile = m->userdata;                       \
+        type val = (type)((size_t)m->userdata2);                \
+                                                                \
+        if (profile->prop == val)                               \
+                return;                                         \
+                                                                \
+        profile->prop = val;                                    \
+}
+
+static void profile_sub_menu_update(struct tray_menu *m) {
         for (struct tray_menu *sub = m->submenu; sub; sub++) {
                 if (sub->is_end)
                         break;
@@ -289,47 +308,119 @@ static void profile_mode_sub_menu_update(struct tray_menu *m) {
         }
 }
 
-static void profile_mode_update(struct tray_menu *m)
-{
-        profile_t *profile = m->userdata;
-        size_t mode = (size_t)m->userdata2;
-
-        m->checked = profile->sched_mode == mode;
-}
-
-static void profile_mode_click(struct tray_menu *m)
-{
-        profile_t *profile = m->userdata;
-        size_t mode = (size_t)m->userdata2;
-
-        if (profile->sched_mode == mode)
-                return;
-
-        profile->sched_mode = mode;
-}
+PROFILE_VALUE_SWITCH_TRAY_CB(sched_mode, uint32_t);
+PROFILE_VALUE_SWITCH_TRAY_CB(proc_prio, uint32_t);
+PROFILE_VALUE_SWITCH_TRAY_CB(io_prio, uint32_t);
 
 static struct tray_menu profile_menu_template[] = {
         { .name = L"Enabled", .pre_show = profile_enabled_update, .on_click = profile_enabled_click },
         { .is_separator = 1 },
         {
                 .name = L"Mode",
-                .pre_show = profile_mode_sub_menu_update,
+                .pre_show = profile_sub_menu_update,
                 .submenu = (struct tray_menu[]) {
                         {
                                 .name = L"Processes",
-                                .pre_show = profile_mode_update,
-                                .on_click = profile_mode_click,
+                                .pre_show = profile_sched_mode_update,
+                                .on_click = profile_sched_mode_click,
                                 .userdata2 = (void *)SUPERVISOR_PROCESSES,
                         },
                         {
                                 .name = L"Threads",
-                                .pre_show = profile_mode_update,
-                                .on_click = profile_mode_click,
+                                .pre_show = profile_sched_mode_update,
+                                .on_click = profile_sched_mode_click,
                                 .userdata2 = (void *)SUPERVISOR_THREADS,
                         },
                         { .is_end = 1 },
                 },
         },
+        {
+                .name = L"Process Priority",
+                .pre_show = profile_sub_menu_update,
+                .submenu = (struct tray_menu[]) {
+                        {
+                                .name = L"Leave as-is",
+                                .pre_show = profile_proc_prio_update,
+                                .on_click = profile_proc_prio_click,
+                                .userdata2 = (void *)PROC_PRIO_UNCHANGED,
+                        },
+                        {
+                                .name = L"Idle",
+                                .pre_show = profile_proc_prio_update,
+                                .on_click = profile_proc_prio_click,
+                                .userdata2 = (void *)PROC_PRIO_IDLE,
+                        },
+                        {
+                                .name = L"Normal -",
+                                .pre_show = profile_proc_prio_update,
+                                .on_click = profile_proc_prio_click,
+                                .userdata2 = (void *)PROC_PRIO_BELOW_NORMAL,
+                        },
+                        {
+                                .name = L"Normal",
+                                .pre_show = profile_proc_prio_update,
+                                .on_click = profile_proc_prio_click,
+                                .userdata2 = (void *)PROC_PRIO_NORMAL,
+                        },
+                        {
+                                .name = L"Normal +",
+                                .pre_show = profile_proc_prio_update,
+                                .on_click = profile_proc_prio_click,
+                                .userdata2 = (void *)PROC_PRIO_ABOVE_NORMAL,
+                        },
+                        {
+                                .name = L"High",
+                                .pre_show = profile_proc_prio_update,
+                                .on_click = profile_proc_prio_click,
+                                .userdata2 = (void *)PROC_PRIO_HIGH,
+                        },
+                        {
+                                .name = L"Realtime",
+                                .pre_show = profile_proc_prio_update,
+                                .on_click = profile_proc_prio_click,
+                                .userdata2 = (void *)PROC_PRIO_REALTIME,
+                        },
+                        { .is_end = 1 },
+                },
+        },
+        {
+                .name = L"IO Priority",
+                .pre_show = profile_sub_menu_update,
+                .submenu = (struct tray_menu[]) {
+                        {
+                                .name = L"Leave as-is",
+                                .pre_show = profile_io_prio_update,
+                                .on_click = profile_io_prio_click,
+                                .userdata2 = (void *)IO_PRIO_UNCHANGED,
+                        },
+                        {
+                                .name = L"Very Low",
+                                .pre_show = profile_io_prio_update,
+                                .on_click = profile_io_prio_click,
+                                .userdata2 = (void *)IO_PRIO_VERY_LOW,
+                        },
+                        {
+                                .name = L"Low",
+                                .pre_show = profile_io_prio_update,
+                                .on_click = profile_io_prio_click,
+                                .userdata2 = (void *)IO_PRIO_LOW,
+                        },
+                        {
+                                .name = L"Normal",
+                                .pre_show = profile_io_prio_update,
+                                .on_click = profile_io_prio_click,
+                                .userdata2 = (void *)IO_PRIO_NORMAL,
+                        },
+                        {
+                                .name = L"High",
+                                .pre_show = profile_io_prio_update,
+                                .on_click = profile_io_prio_click,
+                                .userdata2 = (void *)IO_PRIO_HIGH,
+                        },
+                        { .is_end = 1 },
+                },
+        },
+        { .is_separator = 1 },
         { .name = L"Oneshot", .pre_show = profile_oneshot_update, .on_click = profile_oneshot_click },
         { .name = L"Always Set", .pre_show = profile_always_set_update, .on_click = profile_always_set_click },
         { .is_end = 1 },

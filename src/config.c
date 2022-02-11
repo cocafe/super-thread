@@ -19,7 +19,7 @@ static char *proc_identity_filter_strs[] = {
 };
 
 static char *proc_prio_strs[] = {
-        [PROC_PRIO_UNCHANGED]           = "unchanged",
+        [PROC_PRIO_UNCHANGED]           = "leave_as-is",
         [PROC_PRIO_IDLE]                = "idle",
         [PROC_PRIO_NORMAL]              = "normal",
         [PROC_PRIO_HIGH]                = "high",
@@ -29,7 +29,7 @@ static char *proc_prio_strs[] = {
 };
 
 static char *io_prio_strs[] = {
-        [IO_PRIO_UNCHANGED]             = "unchanged",
+        [IO_PRIO_UNCHANGED]             = "leave_as-is",
         [IO_PRIO_VERY_LOW]              = "very_low",
         [IO_PRIO_LOW]                   = "low",
         [IO_PRIO_NORMAL]                = "normal",
