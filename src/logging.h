@@ -2,6 +2,7 @@
 #define __LOGGING_H__
 
 #include <stdio.h>
+#include <wchar.h>
 
 #include "utils.h"
 
@@ -141,6 +142,7 @@ extern HWND g_console_wnd;
 
 void console_hide(void);
 void console_show(void);
+int console_title_set(wchar_t *title);
 #endif
 
 int logging_init(void);
