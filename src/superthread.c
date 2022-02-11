@@ -102,15 +102,20 @@ optdesc_t *g_opt_list[] = {
         NULL,
 };
 
+int superthread_quit(void)
+{
+        supervisor_trigger_once(&g_sv); // to interrupt sleeping
+        g_should_exit = 1;
+        PostQuitMessage(0);
+}
+
 //
 // tray gui
 //
 
 static void quit_cb(struct tray_menu *m) {
         UNUSED_PARAM(m);
-
-        g_should_exit = 1;
-        PostQuitMessage(0);
+        superthread_quit();
 }
 
 static void trigger_click(struct tray_menu *m) {
@@ -154,9 +159,9 @@ static void console_show_click(struct tray_menu *m)
                 g_console_show = 1;
                 console_show();
 
-                pr_raw("========================================================\n");
-                pr_raw("=== CLOSE THIS LOGGING WINDOW WILL TERMINATE PROGRAM ===\n");
-                pr_raw("========================================================\n");
+                pr_raw("====================================================================\n");
+                pr_raw("=== CLOSE THIS LOGGING WINDOW WILL TERMINATE PROGRAM, ^C TO HIDE ===\n");
+                pr_raw("====================================================================\n");
 
                 return;
         }

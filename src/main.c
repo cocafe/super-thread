@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <errno.h>
+#include <signal.h>
 
 #include <windows.h>
 #include <winuser.h>
@@ -76,6 +77,36 @@ void wnd_msg_process(int blocking)
         }
 }
 
+static void sigint_handler(int dummy) {
+        UNUSED_PARAM(dummy);
+
+        pr_info("receive SIGINT\n");
+
+        superthread_quit();
+}
+
+static BOOL HandlerRoutine(DWORD dwCtrlType)
+{
+        switch (dwCtrlType) {
+        case CTRL_C_EVENT: // ^C event
+                console_hide();
+                tray_update(&g_tray); // XXX: is it thread-safe?!
+                break;
+
+        case CTRL_CLOSE_EVENT: // console is being closed
+                // superthread_quit();
+                break;
+
+        case CTRL_LOGOFF_EVENT: // user is logging off
+        case CTRL_SHUTDOWN_EVENT: // system is shutting down
+        case CTRL_BREAK_EVENT: // ^break
+        default:
+                break;
+        }
+
+        return TRUE; // FALSE will pass event to next signal handler
+};
+
 int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                     LPWSTR cmdline, int cmdshow)
 {
@@ -97,6 +128,15 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         if ((err = logging_init()))
                 goto out;
+
+        if (g_console_alloc) {
+                // if HANDLER is NULL, and TRUE is set, console will ignore ^C
+                // TRUE: add handler
+                // FALSE: remove handler
+                SetConsoleCtrlHandler(HandlerRoutine, TRUE);
+        } else {
+                signal(SIGINT, sigint_handler);
+        }
 
 #ifndef UNICODE
         iconv_winnt_locale_init();

@@ -12,5 +12,6 @@ extern jbuf_t jbuf_usrcfg;
 
 int superthread_tray_init(HINSTANCE ins);
 void superthread_tray_deinit(void);
+int superthread_quit(void);
 
 #endif // SUPER_THREAD_H_
