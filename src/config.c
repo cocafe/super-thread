@@ -38,13 +38,13 @@ static char *io_prio_strs[] = {
 
 static char *proc_balance_strs[] = {
         [PROC_BALANCE_BY_MAP]           = "by_map",
-        [PROC_BALANCE_RAND]             = "random",
+        [PROC_BALANCE_RAND]             = "node_random",
         [PROC_BALANCE_RR]               = "node_rr",
         [PROC_BALANCE_ONLOAD]           = "onload",
 };
 
 static char *thrd_balance_strs[] = {
-        [THRD_BALANCE_RAND]             = "random",
+        [THRD_BALANCE_NODE_RAND]        = "node_random",
         [THRD_BALANCE_NODE_RR]          = "node_rr",
         [THRD_BALANCE_CPU_RR]           = "cpu_rr",
         [THRD_BALANCE_ONLOAD]           = "onload",
@@ -205,6 +205,7 @@ int profile_validate(profile_t *profile)
 
                 switch (profile->processes.balance) {
                 case PROC_BALANCE_BY_MAP:
+                case PROC_BALANCE_RAND:
                 case PROC_BALANCE_RR:
                         if (profile->processes.node_map == 0) {
                                 pr_err("profile [%ls] node_map is not set which is needed for by_map\n",
@@ -219,9 +220,6 @@ int profile_validate(profile_t *profile)
 
                         break;
 
-                case PROC_BALANCE_RAND:
-                        break;
-
                 case PROC_BALANCE_ONLOAD:
                         pr_info("onload balance algorithm is not implemented\n");
                         break;
@@ -233,6 +231,32 @@ int profile_validate(profile_t *profile)
 
         } else if (profile->sched_mode == SUPERVISOR_THREADS) {
                 profile->threads.node_map &= avail_node_map;
+
+                switch (profile->threads.balance) {
+                case THRD_BALANCE_NODE_RAND:
+                case THRD_BALANCE_NODE_RR:
+                        if (profile->threads.node_map == 0) {
+                                pr_err("profile [%ls] node_map is not set which is needed for by_map\n",
+                                       profile->name);
+                                return -EINVAL;
+                        }
+
+                        if (profile->threads.affinity == 0) {
+                                pr_err("profile [%ls] affinity is not set\n", profile->name);
+                                return -EINVAL;
+                        }
+
+                        break;
+
+                case THRD_BALANCE_ONLOAD:
+                case THRD_BALANCE_CPU_RR:
+                        pr_info("algorithm is not implemented\n");
+                        break;
+
+                default:
+                        pr_err("invalid balance mode\n");
+                        return -EINVAL;
+                }
         }
 
         return 0;

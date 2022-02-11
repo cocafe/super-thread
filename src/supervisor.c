@@ -1033,7 +1033,7 @@ static void affinity_mask_limit(GROUP_AFFINITY *new_aff, uint64_t affinity, uint
 
 static int process_sched_thread_affinity_set(DWORD tid, void *data)
 {
-        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->entry;
+        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->proc;
         GROUP_AFFINITY *new_aff = ((struct thrd_aff_set_data *)data)->aff;
         GROUP_AFFINITY *proc_aff = &proc->last_aff;
         GROUP_AFFINITY curr_aff;
@@ -1080,17 +1080,17 @@ out:
         return 0;
 }
 
-static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entry,
+static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *proc,
                                             HANDLE process, GROUP_AFFINITY *new_aff)
 {
-        proc_info_t *info = &entry->info;
-        GROUP_AFFINITY *last_aff = &entry->last_aff;
+        proc_info_t *info = &proc->info;
+        GROUP_AFFINITY *last_aff = &proc->last_aff;
         int err;
 
         if (!info->use_thread_affinity) {
                 GROUP_AFFINITY *curr_aff = &info->curr_aff;
 
-                if (!entry->is_new && !entry->always_set) {
+                if (!proc->is_new && !proc->always_set) {
                         if (last_aff->Mask == curr_aff->Mask &&
                             last_aff->Group == curr_aff->Group) {
                                 pr_verbose("pid: %5zu \"%ls\" group affinity did not change, skip\n",
@@ -1111,30 +1111,30 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *entr
         } else {
                 struct thrd_aff_set_data data = {
                         .sv = sv,
-                        .entry = entry,
+                        .proc = proc,
                         .aff = new_aff,
                 };
 
                 err = process_threads_iterate(info->pid, process_sched_thread_affinity_set, &data);
         }
 
-        if (entry->is_new) {
+        if (proc->is_new) {
                 memcpy(last_aff, new_aff, sizeof(GROUP_AFFINITY));
         }
 
         return err;
 }
 
-static int processes_sched_by_map(supervisor_t *sv, proc_entry_t *entry, HANDLE process)
+static int processes_sched_by_map(supervisor_t *sv, proc_entry_t *proc, HANDLE process)
 {
-        profile_t *profile = entry->profile;
+        profile_t *profile = proc->profile;
         GROUP_AFFINITY new_aff = { 0 };
 
         new_aff.Mask = profile->processes.affinity;
         new_aff.Group = find_first_bit((void *)&profile->processes.node_map,
                                        SIZE_TO_BITS(profile->processes.node_map));
 
-        return processes_sched_set_new_affinity(sv, entry, process, &new_aff);;
+        return processes_sched_set_new_affinity(sv, proc, process, &new_aff);;
 }
 
 static unsigned long node_map_next(unsigned long curr, unsigned long mask)
@@ -1155,11 +1155,11 @@ static unsigned long node_map_next(unsigned long curr, unsigned long mask)
         return curr;
 }
 
-static int processes_sched_rr(supervisor_t *sv, proc_entry_t *entry, HANDLE process)
+static int processes_sched_rr(supervisor_t *sv, proc_entry_t *proc, HANDLE process)
 {
-        profile_t *profile = entry->profile;
+        profile_t *profile = proc->profile;
         unsigned long node_map = profile->processes.node_map;
-        struct procs_sched *val = &(sv->vals[entry->profile_idx].u.procs_sched);
+        struct procs_sched *val = &(sv->vals[proc->profile_idx].u.procs_sched);
         GROUP_AFFINITY new_aff = { 0 };
         int err;
 
@@ -1168,26 +1168,38 @@ static int processes_sched_rr(supervisor_t *sv, proc_entry_t *entry, HANDLE proc
         affinity_mask_limit(&new_aff, profile->processes.affinity,
                             find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next)));
 
-        err = processes_sched_set_new_affinity(sv, entry, process, &new_aff);
+        err = processes_sched_set_new_affinity(sv, proc, process, &new_aff);
 
         return err;
 }
 
-static int supervisor_processes_sched(supervisor_t *sv, proc_entry_t *entry, HANDLE process)
+static int processes_sched_node_rand(supervisor_t *sv, proc_entry_t *proc, HANDLE process)
+{
+        profile_t *profile = proc->profile;
+        GROUP_AFFINITY new_aff = { 0 };
+
+        new_aff.Mask = profile->processes.affinity;
+        new_aff.Group = rand() % g_sys_info.nr_cpu_grp; // 0 <= result < nr_cpu_grp
+
+        return processes_sched_set_new_affinity(sv, proc, process, &new_aff);;
+}
+
+static int supervisor_processes_sched(supervisor_t *sv, proc_entry_t *proc, HANDLE process)
 {
         // DO NOT CHECK ERROR RETURN
         // since there are multiple processes
 
-        switch (entry->profile->processes.balance) {
+        switch (proc->profile->processes.balance) {
         case PROC_BALANCE_BY_MAP:
-                processes_sched_by_map(sv, entry, process);
+                processes_sched_by_map(sv, proc, process);
                 break;
 
         case PROC_BALANCE_RR:
-                processes_sched_rr(sv, entry, process);
+                processes_sched_rr(sv, proc, process);
                 break;
 
         case PROC_BALANCE_RAND:
+                processes_sched_node_rand(sv, proc, process);
                 break;
 
         case PROC_BALANCE_ONLOAD:
@@ -1227,7 +1239,7 @@ static thrd_entry_t *thrd_entry_get(tommy_hashtable *tbl, DWORD tid, DWORD pid)
 static int thread_node_rr_affinity_set(DWORD tid, void *data)
 {
         supervisor_t *sv = ((struct thrd_aff_set_data *)data)->sv;
-        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->entry;
+        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->proc;
         thrd_entry_t *thrd_entry = thrd_entry_get(&proc->threads, tid, proc->info.pid);
         wchar_t *proc_name = proc->info.name;
         size_t pid = proc->info.pid;
@@ -1313,14 +1325,71 @@ not_exist:
         return 0;
 }
 
-static int threads_sched_node_rr(supervisor_t *sv, proc_entry_t *entry)
+static int threads_sched_node_rr(supervisor_t *sv, proc_entry_t *proc)
 {
         struct thrd_aff_set_data data = {
                 .sv = sv,
-                .entry = entry,
+                .proc = proc,
         };
 
-        return process_threads_iterate(entry->info.pid, thread_node_rr_affinity_set, &data);
+        return process_threads_iterate(proc->info.pid, thread_node_rr_affinity_set, &data);
+}
+
+static int thread_rand_node_affinity_set(DWORD tid, void *data)
+{
+        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->proc;
+        profile_t *profile = proc->profile;
+        wchar_t *proc_name = proc->info.name;
+        size_t pid = proc->info.pid;
+        GROUP_AFFINITY curr_aff, new_aff = { 0 };
+
+        HANDLE thrd_hdl = OpenThread(THREAD_SET_INFORMATION |
+                                     THREAD_QUERY_INFORMATION,
+                                     FALSE,
+                                     tid);
+
+        if (!thrd_hdl) { // thread might just be closed
+                pr_err("OpenThread() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
+                       tid, pid, proc_name, GetLastError());
+                return -EFAULT;
+        }
+
+        if (0 == GetThreadGroupAffinity(thrd_hdl, &curr_aff)) {
+                pr_err("GetThreadGroupAffinity() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
+                       tid, pid, proc_name, GetLastError());
+                goto out;
+        }
+
+        new_aff.Mask = profile->processes.affinity;
+        new_aff.Group = rand() % g_sys_info.nr_cpu_grp; // 0 <= result < nr_cpu_grp
+
+        affinity_mask_limit(&new_aff, new_aff.Mask, new_aff.Group);
+
+        pr_rawlvl(DEBUG, "[tid: %5lu pid: %5zu \"%ls\"] [%2hu] [0x%016jx] ==> [%2hu] [0x%016jx]\n",
+                  tid, pid, proc_name, curr_aff.Group, curr_aff.Mask, new_aff.Group, new_aff.Mask);
+
+        if (0 == SetThreadGroupAffinity(thrd_hdl, &new_aff, NULL)) {
+                pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
+                       tid, pid, proc_name, GetLastError());
+        }
+
+out:
+        CloseHandle(thrd_hdl);
+
+        return 0;
+}
+
+static int threads_sched_rand_node(supervisor_t *sv, proc_entry_t *proc)
+{
+        struct thrd_aff_set_data data = {
+                .sv = sv,
+                .proc = proc,
+        };
+
+        if (!proc->is_new && !proc->profile->always_set)
+                return 0;
+
+        return process_threads_iterate(proc->info.pid, thread_rand_node_affinity_set, &data);
 }
 
 static void dead_thread_entry_remove(supervisor_t *sv, proc_entry_t *proc_entry)
@@ -1354,17 +1423,18 @@ static void dead_thread_entry_remove(supervisor_t *sv, proc_entry_t *proc_entry)
         }
 }
 
-static int supervisor_threads_sched(supervisor_t *sv, proc_entry_t *entry)
+static int supervisor_threads_sched(supervisor_t *sv, proc_entry_t *proc)
 {
-        switch (entry->profile->threads.balance) {
+        switch (proc->profile->threads.balance) {
         case THRD_BALANCE_CPU_RR:
                 break;
 
         case THRD_BALANCE_NODE_RR:
-                threads_sched_node_rr(sv, entry);
+                threads_sched_node_rr(sv, proc);
                 break;
 
-        case THRD_BALANCE_RAND:
+        case THRD_BALANCE_NODE_RAND:
+                threads_sched_rand_node(sv, proc);
                 break;
 
         case THRD_BALANCE_ONLOAD:
@@ -1373,7 +1443,7 @@ static int supervisor_threads_sched(supervisor_t *sv, proc_entry_t *entry)
                 return -EINVAL;
         }
 
-        dead_thread_entry_remove(sv, entry);
+        dead_thread_entry_remove(sv, proc);
 
         return 0;
 }
@@ -1398,10 +1468,10 @@ static int process_info_update(proc_info_t *info, HANDLE process)
         return err;
 }
 
-static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
+static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
 {
-        proc_info_t *info = &entry->info;
-        profile_t *profile = entry->profile;
+        proc_info_t *info = &proc->info;
+        profile_t *profile = proc->profile;
         wchar_t exe_name[_MAX_FNAME] = { 0 };
         int err = 0;
         DWORD status;
@@ -1441,7 +1511,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         if (!profile->enabled)
                 goto out;
 
-        if (image_path_extract_file_name(entry->info.pid, exe_name, _MAX_FNAME))
+        if (image_path_extract_file_name(proc->info.pid, exe_name, _MAX_FNAME))
                 goto out;
 
         if ((err = process_info_update(info, process))) {
@@ -1449,12 +1519,12 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
                 goto out;
         }
 
-        if (!entry->is_new && !is_wstr_equal(info->name, exe_name)) {
+        if (!proc->is_new && !is_wstr_equal(info->name, exe_name)) {
                 err = -EINVAL;
                 goto out;
         }
 
-        if (profile->oneshot && entry->oneshot)
+        if (profile->oneshot && proc->oneshot)
                 goto out;
 
         if ((err = profile_proc_prio_set(profile, process)))
@@ -1465,11 +1535,11 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
 
         switch (profile->sched_mode) {
         case SUPERVISOR_PROCESSES:
-                err = supervisor_processes_sched(sv, entry, process);
+                err = supervisor_processes_sched(sv, proc, process);
                 break;
 
         case SUPERVISOR_THREADS:
-                err = supervisor_threads_sched(sv, entry);
+                err = supervisor_threads_sched(sv, proc);
                 break;
 
         default:
@@ -1482,12 +1552,12 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *entry)
         if ((err = process_info_update(info, process)))
                 pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
 
-        entry->is_new = 0;
-        entry->oneshot = profile->oneshot;
-        entry->always_set = profile->always_set;
+        proc->is_new = 0;
+        proc->oneshot = profile->oneshot;
+        proc->always_set = profile->always_set;
 
 out:
-        entry->last_stamp = sv->update_stamp;
+        proc->last_stamp = sv->update_stamp;
 
         CloseHandle(process);
 
@@ -1695,6 +1765,8 @@ int supervisor_run(supervisor_t *sv)
 int supervisor_init(supervisor_t *sv)
 {
         size_t profile_cnt = g_cfg.profile_cnt;
+
+        srand(time(NULL));
 
         sem_init(&sv->sleeper, 0, 0);
         pthread_mutex_init(&sv->trigger_lck, NULL);

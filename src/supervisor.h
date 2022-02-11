@@ -87,7 +87,7 @@ struct supervisor {
 
 struct thrd_aff_set_data {
         supervisor_t *sv;
-        proc_entry_t *entry;
+        proc_entry_t *proc;
         GROUP_AFFINITY *aff;
 };
 

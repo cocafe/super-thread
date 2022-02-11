@@ -54,7 +54,7 @@ enum proc_node_balance {
 };
 
 enum thread_balance {
-        THRD_BALANCE_RAND = 0,
+        THRD_BALANCE_NODE_RAND = 0,
         THRD_BALANCE_NODE_RR,
         THRD_BALANCE_CPU_RR,
         THRD_BALANCE_ONLOAD,
