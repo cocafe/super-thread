@@ -129,16 +129,6 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         if ((err = logging_init()))
                 goto out;
 
-        if (g_console_alloc) {
-                // if HANDLER is NULL, and TRUE is set, console will ignore ^C
-                // TRUE: add handler
-                // FALSE: remove handler
-                SetConsoleCtrlHandler(HandlerRoutine, TRUE);
-                console_title_set(L"super-thread (^C to hide console)");
-        } else {
-                signal(SIGINT, sigint_handler);
-        }
-
 #ifndef UNICODE
         iconv_winnt_locale_init();
 #endif
@@ -169,6 +159,18 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         supervisor_init(&g_sv);
 
         supervisor_run(&g_sv);
+
+        if (g_console_alloc) {
+                // if HANDLER is NULL, and TRUE is set, console will ignore ^C
+                // TRUE: add handler
+                // FALSE: remove handler
+                SetConsoleCtrlHandler(HandlerRoutine, TRUE);
+
+                // XXX: racing with console window initialization
+                console_title_set(L"super-thread (^C to hide console)");
+        } else {
+                signal(SIGINT, sigint_handler);
+        }
 
         wnd_msg_process(1);
 
