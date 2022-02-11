@@ -134,6 +134,7 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 // TRUE: add handler
                 // FALSE: remove handler
                 SetConsoleCtrlHandler(HandlerRoutine, TRUE);
+                console_title_set(L"super-thread (^C to hide console)");
         } else {
                 signal(SIGINT, sigint_handler);
         }
