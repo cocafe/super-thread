@@ -102,7 +102,7 @@ optdesc_t *g_opt_list[] = {
         NULL,
 };
 
-int superthread_quit(void)
+void superthread_quit(void)
 {
         supervisor_trigger_once(&g_sv); // to interrupt sleeping
         g_should_exit = 1;
