@@ -225,6 +225,18 @@ static void save_click(struct tray_menu *m)
         pr_raw("saved json config: %s\n", path);
 }
 
+void tray_lbtn_dblclick(struct tray *tray, void *data)
+{
+        UNUSED_PARAM(data);
+
+        if (g_console_is_hide)
+                console_show();
+        else
+                console_hide();
+
+        tray_update(tray);
+}
+
 struct tray g_tray = {
         .icon = {
                 .path = NULL,
@@ -256,7 +268,9 @@ struct tray g_tray = {
                 { .is_separator = 1 },
                 { .name = L"Quit", .on_click = quit_cb },
                 { .is_end = 1 }
-        }
+        },
+        .lbtn_click = NULL,
+        .lbtn_dblclick = tray_lbtn_dblclick,
 };
 
 struct tray_menu *profile_menu_find(struct tray_menu *top_menu)
@@ -516,7 +530,6 @@ void profile_menu_free(struct tray_menu *menu)
 
         free(menu->submenu);
 }
-
 
 int superthread_tray_init(HINSTANCE ins)
 {
