@@ -1,6 +1,4 @@
-### SUPER-THREAD
-
----
+# SUPER-THREAD
 
 or whatever, this is a simple & stupid utility to tweak affinity or some another settings of windows process and thread, with the inspire of [ProcessHacker](https://github.com/processhacker/processhacker) and [GroupExtend](https://github.com/jeremycollake/groupextend).
 
