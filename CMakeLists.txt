@@ -78,6 +78,8 @@ add_executable(${PROJECT_NAME} ${SOURCE_FILES} ${APPRES_OBJS})
 
 include_directories(tommyds)
 include_directories(asset)
+include_directories(include)
+include_directories(include/phnt/include)
 
 target_link_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/tommyds)
 
