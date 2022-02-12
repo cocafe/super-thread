@@ -151,6 +151,9 @@ HMENU tray_menu_update(struct tray_menu *m, UINT *id)
                 if (m->checked)
                         item.fState |= MFS_CHECKED;
 
+                if (m->highlighted)
+                        item.fState |= MFS_HILITE;
+
                 if (m->submenu != NULL) {
                         item.fMask |= MIIM_SUBMENU;
                         item.hSubMenu = tray_menu_update(m->submenu, id);

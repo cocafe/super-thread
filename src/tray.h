@@ -27,6 +27,7 @@ struct tray_menu {
         UINT                    id;
         int                     disabled;       // item disabled (grey out)
         int                     checked;        // item checked
+        int                     highlighted;
 
         // item click cb
         void                    (*on_click)(struct tray_menu *);
