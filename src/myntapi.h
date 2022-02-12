@@ -4,13 +4,13 @@
 // some structs are taken from process hacker
 
 enum _PROC_PRIORITY_HINT {
-        ProcPrioClassUnknown = 0,
-        ProcPrioClassIdle,
-        ProcPrioClassNormal,
-        ProcPrioClassHigh,
-        ProcPrioClassRealtime,
-        ProcPrioClassAboveNormal,
-        ProcPrioClassBelowNormal,
+        ProcPrioClassUnknown             = 0,
+        ProcPrioClassIdle,              // 1
+        ProcPrioClassNormal,            // 2
+        ProcPrioClassHigh,              // 3
+        ProcPrioClassRealtime,          // 4
+        ProcPrioClassBelowNormal,       // 5
+        ProcPrioClassAboveNormal,       // 6
         MaxProcPrioClasses,
 };
 
