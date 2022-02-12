@@ -33,7 +33,7 @@ supervisor_t g_sv = { 0 };
 static uint8_t priofile_proc_prio_cls[] = {
         [PROC_PRIO_UNCHANGED]           = ProcPrioClassUnknown,
         [PROC_PRIO_IDLE]                = ProcPrioClassIdle,
-        [PROC_PRIO_NORMAL]              = ProcPrioClassNnormal,
+        [PROC_PRIO_NORMAL]              = ProcPrioClassNormal,
         [PROC_PRIO_HIGH]                = ProcPrioClassHigh,
         [PROC_PRIO_REALTIME]            = ProcPrioClassRealtime,
         [PROC_PRIO_BELOW_NORMAL]        = ProcPrioClassBelowNormal,
@@ -925,7 +925,7 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
         static const char *proc_prio_strs[] = {
                 [ProcPrioClassUnknown]          = "unknown",
                 [ProcPrioClassIdle]             = "idle",
-                [ProcPrioClassNnormal]          = "normal",
+                [ProcPrioClassNormal]           = "normal",
                 [ProcPrioClassHigh]             = "high",
                 [ProcPrioClassRealtime]         = "realtime",
                 [ProcPrioClassBelowNormal]      = "normal-",

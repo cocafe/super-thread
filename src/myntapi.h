@@ -6,7 +6,7 @@
 enum _PROC_PRIORITY_HINT {
         ProcPrioClassUnknown = 0,
         ProcPrioClassIdle,
-        ProcPrioClassNnormal,
+        ProcPrioClassNormal,
         ProcPrioClassHigh,
         ProcPrioClassRealtime,
         ProcPrioClassAboveNormal,
