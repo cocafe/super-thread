@@ -44,17 +44,7 @@ things come to thread level, when a threaded process creates a new thread with n
 
 this tool runs in a simple manner:
 
-```flow
-st=>start: start
-op=>operation: select processes
-op1=>operation: apply settings
-sleep=>operation: sleep
-is_term=>condition: gonna terminate?
-e=>end
-st->op->op1->sleep->is_term
-is_term(yes)->e
-is_term(no)->op
-```
+![](flow.png)
 
 #### USAGE
 
@@ -67,9 +57,8 @@ is_term(no)->op
 for details, please check `./config/config_commented.json`
 
 * `processes` mode
-
   * `by_map`: all processes matched profile will be set with static group affinity provided
-
+  
   * `node_rr`: all processes matched profile will be assigned to processor group with a round-robin manner and affinity mask provided
   * `node_randome`: all processes matched profile will be assigned to processor group randomly with affinity provided
   * `onload`: not implemented
