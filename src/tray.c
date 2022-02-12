@@ -22,7 +22,7 @@ static LRESULT CALLBACK tray_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM
                 PostQuitMessage(0);
                 goto out;
 
-        case WM_TRAY_CALLBACK_MESSAGE:
+        case WM_TRAY_CALLBACK_MSG:
                 if (lparam == WM_LBUTTONUP) {
                         struct timespec ts = { 0 };
                         struct timespec *last = &data->last_click;
@@ -52,24 +52,25 @@ update_ts:
                         memcpy(last, curr, sizeof(ts));
 
                         goto out;
-                } else if (lparam == WM_RBUTTONUP) {
+                }
+                else if (lparam == WM_RBUTTONUP) {
                         HMENU hmenu = data->hmenu;
                         POINT p;
-                        WORD cmd;
+                        WORD item;
 
                         GetCursorPos(&p);
                         SetForegroundWindow(hwnd);
 
-                        cmd = TrackPopupMenu(hmenu,
+                        item = TrackPopupMenu(hmenu,
                                              TPM_LEFTALIGN |
                                              TPM_RIGHTBUTTON |
                                              TPM_RETURNCMD |
                                              TPM_NONOTIFY,
-                                             p.x, p.y,
-                                             0,
-                                             hwnd,
-                                             NULL);
-                        SendMessage(hwnd, WM_COMMAND, cmd, 0);
+                                              p.x, p.y,
+                                              0,
+                                              hwnd,
+                                              NULL);
+                        SendMessage(hwnd, WM_COMMAND, item, 0);
 
                         goto out;
                 }
@@ -77,7 +78,7 @@ update_ts:
                 break;
 
         case WM_COMMAND:
-                if (wparam >= ID_TRAY_FIRST) {
+                if (wparam >= MENU_ITEM_ID_BEGIN) {
                         struct tray_menu *menu = NULL;
                         HMENU hmenu = data->hmenu;
                         MENUITEMINFO item = {
@@ -89,10 +90,18 @@ update_ts:
                                 menu = (void *)item.dwItemData;
                                 if (menu && menu->on_click != NULL) {
                                         menu->on_click(menu);
-                                        tray_update(tray); // XXX: is this to complex? update current menu is fine?
+                                        tray_update_post(tray);
                                 }
                         }
 
+                        goto out;
+                }
+
+                break;
+
+        case WM_TRAY_UPDATE_MSG:
+                if (wparam == TRAY_UPDATE_MAGIC) {
+                        tray_update(tray);
                         goto out;
                 }
 
@@ -118,7 +127,7 @@ HMENU tray_menu_update(struct tray_menu *m, UINT *id)
                         break;
 
                 if (m->is_separator) {
-                        InsertMenu(hmenu, *id, MF_SEPARATOR, TRUE, L"");
+                        InsertMenu(hmenu, *id, MF_SEPARATOR, FALSE, L"");
                         m->id = *id;
                         continue;
                 }
@@ -152,7 +161,9 @@ HMENU tray_menu_update(struct tray_menu *m, UINT *id)
                 item.dwTypeData = m->name;
                 item.dwItemData = (ULONG_PTR)m;
 
-                InsertMenuItem(hmenu, *id, TRUE, &item);
+                if (0 == InsertMenuItem(hmenu, *id, FALSE, &item))
+                        pr_err("failed to insert menu item: \"%ls\"\n", m->name);
+
                 m->id = *id;
         }
 
@@ -206,17 +217,32 @@ void tray_update(struct tray *tray)
 {
         HMENU prevmenu = tray->data.hmenu;
         HMENU hmenu = prevmenu;
-        UINT id = ID_TRAY_FIRST;
+        UINT id = MENU_ITEM_ID_BEGIN;
+
+        pthread_mutex_lock(&tray->data.update_lck);
+
+        // tray is about to exit
+        if (hmenu == NULL)
+                goto out;
 
         tray->data.hmenu = tray_menu_update(tray->menu, &id);
+        tray->data.max_menu_id = id;
 
         SendMessage(tray->data.hwnd, WM_INITMENUPOPUP, (WPARAM)hmenu, 0);
 
         tray_icon_update(tray);
 
-        if (prevmenu != NULL) {
+        if (prevmenu != NULL && prevmenu != INVALID_HANDLE_VALUE) {
                 DestroyMenu(prevmenu);
         }
+
+out:
+        pthread_mutex_unlock(&tray->data.update_lck);
+}
+
+void tray_update_post(struct tray *tray)
+{
+        PostMessage(tray->data.hwnd, WM_TRAY_UPDATE_MSG, TRAY_UPDATE_MAGIC, (LPARAM)tray);
 }
 
 int tray_init(struct tray *tray, HINSTANCE ins)
@@ -247,9 +273,6 @@ int tray_init(struct tray *tray, HINSTANCE ins)
 
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)tray);
         UpdateWindow(hwnd);
-        tray->data.hwnd = hwnd;
-
-        tray->data.ins = ins;
 
         nid = &tray->data.nid;
         memset(nid, 0, sizeof(NOTIFYICONDATA));
@@ -257,23 +280,17 @@ int tray_init(struct tray *tray, HINSTANCE ins)
         nid->hWnd               = hwnd;
         nid->uID                = 0;
         nid->uFlags             = NIF_ICON | NIF_MESSAGE;
-        nid->uCallbackMessage   = WM_TRAY_CALLBACK_MESSAGE;
+        nid->uCallbackMessage   = WM_TRAY_CALLBACK_MSG;
         Shell_NotifyIcon(NIM_ADD, nid);
 
+        // initial value
+        tray->data.hmenu = INVALID_HANDLE_VALUE;
+        tray->data.ins = ins;
+        tray->data.hwnd = hwnd;
+
+        pthread_mutex_init(&tray->data.update_lck, NULL);
+
         tray_update(tray);
-
-        return 0;
-}
-
-int tray_click_cb_set(struct tray *tray, void *userdata,
-                      tray_click_cb lbtn_click, tray_click_cb lbtn_dblclick)
-{
-        if (!tray)
-                return -EINVAL;
-
-        tray->lbtn_click = lbtn_click;
-        tray->lbtn_dblclick = lbtn_dblclick;
-        tray->data.userdata = userdata;
 
         return 0;
 }
@@ -296,10 +313,14 @@ void tray_exit(struct tray *tray)
                 nid->hIcon = NULL;
         }
 
-        if (hmenu != 0) {
-                DestroyMenu(hmenu); // XXX: does not free sub-menu???
+        pthread_mutex_lock(&tray->data.update_lck);
+        if (hmenu != 0 && hmenu != INVALID_HANDLE_VALUE) {
+                DestroyMenu(hmenu);
                 tray->data.hmenu = NULL;
         }
+        pthread_mutex_unlock(&tray->data.update_lck);
+
+        pthread_mutex_destroy(&tray->data.update_lck);
 
         PostQuitMessage(0);
         UnregisterClass(WC_TRAY_CLASS_NAME, GetModuleHandle(NULL));
@@ -320,6 +341,104 @@ int tray_loop(int blocking) {
 
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
+        }
+
+        return 0;
+}
+
+int tray_click_cb_set(struct tray *tray, void *userdata,
+                      tray_click_cb lbtn_click, tray_click_cb lbtn_dblclick)
+{
+        if (!tray)
+                return -EINVAL;
+
+        tray->lbtn_click = lbtn_click;
+        tray->lbtn_dblclick = lbtn_dblclick;
+        tray->data.userdata = userdata;
+
+        return 0;
+}
+
+struct tray_menu *tray_menu_alloc_copy(struct tray_menu *src)
+{
+        struct tray_menu *dst = NULL;
+        struct tray_menu *m;
+        size_t item_cnt = 0;
+
+        if (!src)
+                return NULL;
+
+        for (m = src; m != NULL; m++) {
+                item_cnt++;
+
+                if (m->is_end)
+                        break;
+        }
+
+        dst = calloc(item_cnt, sizeof(struct tray_menu));
+        if (!dst)
+                return NULL;
+
+        memcpy(dst, src, item_cnt * sizeof(struct tray_menu));
+
+        for (size_t i = 0; i < item_cnt; i++) {
+                struct tray_menu *m_dst = &dst[i];
+                struct tray_menu *m_src = &src[i];
+
+                if (m_src->submenu != NULL) {
+                        m_dst->submenu = tray_menu_alloc_copy(m_src->submenu);
+                        if (m_dst->submenu == NULL)
+                                goto err;
+                }
+        }
+
+        return dst;
+
+err:
+        free(dst);
+
+        return NULL;
+}
+
+void tray_menu_recursive_free(struct tray_menu *m)
+{
+        if (!m)
+                return;
+
+        for (struct tray_menu *i = m; i != NULL; i++) {
+                tray_menu_recursive_free(i->submenu);
+
+                if (i->is_end)
+                        break;
+        }
+
+        free(m);
+}
+
+/*
+ * if same (struct tray_menu *) is added multiple times to menu,
+ * while getting (struct tray_menu *) by MENU ID via GetMenuItemInfo()
+ * will always return the last (struct tray_menu *) added to menu,
+ * this behavior is unexpected!
+ */
+int tray_item_id_sanity_check(struct tray *tray)
+{
+        struct tray_menu *menu = NULL;
+        HMENU hmenu = tray->data.hmenu;
+        MENUITEMINFO item = {
+                .cbSize = sizeof(MENUITEMINFO),
+                .fMask = MIIM_ID | MIIM_DATA,
+        };
+
+        for (size_t id = MENU_ITEM_ID_BEGIN; id < tray->data.max_menu_id; id++) {
+                // no such item
+                if (0 == GetMenuItemInfo(hmenu, id, FALSE, &item))
+                        return -EINVAL;
+
+                // id mismatch
+                menu = (void *)item.dwItemData;
+                if (menu->id != id)
+                        return -EFAULT;
         }
 
         return 0;

@@ -1,9 +1,19 @@
 #ifndef TRAY_H
 #define TRAY_H
 
-#define WM_TRAY_CALLBACK_MESSAGE        (WM_USER + 1)
+#include <pthread.h>
+
+#include <windows.h>
+#include <winuser.h>
+
+#define WM_TRAY_CALLBACK_MSG            (WM_USER + 1)
+#define WM_TRAY_UPDATE_MSG              (WM_USER + 2)
+
 #define WC_TRAY_CLASS_NAME              L"TRAY"
-#define ID_TRAY_FIRST                   (1000)
+
+#define MENU_ITEM_ID_BEGIN              (1000)
+
+#define TRAY_UPDATE_MAGIC               (0x5aa1)
 
 struct tray;
 
@@ -30,6 +40,8 @@ struct tray_menu {
 };
 
 struct tray_data {
+        pthread_mutex_t update_lck;
+
         HINSTANCE       ins;
 
         WNDCLASSEX      wc;
@@ -38,6 +50,7 @@ struct tray_data {
 
         HWND            hwnd;
         HMENU           hmenu;
+        UINT            max_menu_id;
 
         void           *userdata;
 
@@ -63,10 +76,16 @@ struct tray {
 };
 
 int tray_init(struct tray *tray, HINSTANCE ins);
-int tray_loop(int blocking);
-void tray_update(struct tray *tray);
 void tray_exit(struct tray *tray);
+
+void tray_update_post(struct tray *tray);
+void tray_update(struct tray *tray);
+
+int tray_loop(int blocking);
+
 int tray_click_cb_set(struct tray *tray, void *userdata,
                       tray_click_cb lbtn_click, tray_click_cb lbtn_dblclick);
 
+struct tray_menu *tray_menu_alloc_copy(struct tray_menu *src);
+void tray_menu_recursive_free(struct tray_menu *m);
 #endif /* TRAY_H */
