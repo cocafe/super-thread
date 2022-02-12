@@ -44,7 +44,7 @@ things come to thread level, when a threaded process creates a new thread with n
 
 this tool runs in a simple manner:
 
-![](flow.png)
+![](./doc/flow.png)
 
 #### USAGE
 
