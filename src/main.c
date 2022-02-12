@@ -90,7 +90,7 @@ static BOOL HandlerRoutine(DWORD dwCtrlType)
         switch (dwCtrlType) {
         case CTRL_C_EVENT: // ^C event
                 console_hide();
-                tray_update(&g_tray); // XXX: is it thread-safe?!
+                tray_update_post(&g_tray);
                 break;
 
         case CTRL_CLOSE_EVENT: // console is being closed

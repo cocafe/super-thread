@@ -234,7 +234,7 @@ void tray_lbtn_dblclick(struct tray *tray, void *data)
         else
                 console_hide();
 
-        tray_update(tray);
+        tray_update_post(tray);
 }
 
 struct tray g_tray = {
@@ -383,6 +383,9 @@ static struct tray_menu profile_menu_template[] = {
                                 .userdata2 = (void *)PROC_PRIO_UNCHANGED,
                         },
                         {
+                                .is_separator = 1
+                        },
+                        {
                                 .name = L"Idle",
                                 .pre_show = profile_proc_prio_update,
                                 .on_click = profile_proc_prio_click,
@@ -430,6 +433,9 @@ static struct tray_menu profile_menu_template[] = {
                                 .pre_show = profile_io_prio_update,
                                 .on_click = profile_io_prio_click,
                                 .userdata2 = (void *)IO_PRIO_UNCHANGED,
+                        },
+                        {
+                                .is_separator = 1
                         },
                         {
                                 .name = L"Very Low",
@@ -491,13 +497,11 @@ int profile_menu_create(struct tray_menu *menu)
 
                 m->name = profile->name;
                 m->userdata = profile;
-                m->submenu = calloc(1, sizeof(profile_menu_template));
+                m->submenu = tray_menu_alloc_copy(profile_menu_template);
                 if (!m->submenu) {
-                        pr_err("failed to allocate memory for profile menu\n");
+                        pr_err("failed to copy profile menu template\n");
                         return -ENOMEM;
                 }
-
-                memcpy(m->submenu, profile_menu_template, sizeof(profile_menu_template));
 
                 for (size_t j = 0; j < ARRAY_SIZE(profile_menu_template); j++) {
                         struct tray_menu *mm = &m->submenu[j];
@@ -524,8 +528,7 @@ void profile_menu_free(struct tray_menu *menu)
         for (size_t i = 0; i < g_cfg.profile_cnt; i++) {
                 struct tray_menu *m = &menu->submenu[i];
 
-                if (m->submenu)
-                        free(m->submenu);
+                tray_menu_recursive_free(m->submenu);
         }
 
         free(menu->submenu);
@@ -544,7 +547,7 @@ int superthread_tray_init(HINSTANCE ins)
         if ((err = profile_menu_create(g_profile_menu)))
                 return err;
 
-        tray_update(tray);
+        tray_update_post(tray);
 
         return 0;
 }
