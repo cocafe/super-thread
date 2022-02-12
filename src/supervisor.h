@@ -5,6 +5,7 @@
 #include <semaphore.h>
 
 #include <tommy.h>
+
 #include "myntapi.h"
 
 #define PROC_HASH_TBL_BUCKET    (1024)

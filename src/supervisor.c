@@ -7,6 +7,9 @@
 #include <pthread.h>
 #include <semaphore.h>
 
+//#include <phnt_windows.h>
+//#include <phnt.h>
+
 #include <windows.h>
 #include <windowsx.h>
 #include <winuser.h>
@@ -309,7 +312,8 @@ static int process_threads_iterate(DWORD pid, int (*func)(DWORD tid, void *), vo
         }
 
         do {
-                if (pid != te32.th32OwnerProcessID)
+                // say pid = 0 to iterate system-wide threads
+                if (pid != 0 && pid != te32.th32OwnerProcessID)
                         continue;
 
                 if ((err = func(te32.th32ThreadID, data)))
@@ -1059,15 +1063,17 @@ static int process_sched_thread_affinity_set(DWORD tid, void *data)
 
         if (!proc->is_new && !proc->always_set) {
                 if (proc_aff->Group == curr_aff.Group && proc_aff->Mask == curr_aff.Mask) {
-                        pr_verbose("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid, proc_name);
+                        pr_rawlvl(VERBOSE,
+                                  "pid: %5zu \"%ls\" tid: %5lu affinity did not change\n",
+                                  pid, proc_name, tid);
                         goto out;
                 }
         }
 
         affinity_mask_limit(new_aff, new_aff->Mask, new_aff->Group);
 
-        pr_rawlvl(DEBUG, "[tid: %5lu pid: %5zu \"%ls\"] [%2hu] [0x%016jx] ==> [%2hu] [0x%016jx]\n",
-                  tid, pid, proc_name, curr_aff.Group, curr_aff.Mask, new_aff->Group, new_aff->Mask);
+        pr_rawlvl(DEBUG, "[pid: %5zu \"%ls\" tid: %5lu] [%2hu] [0x%016jx] ==> [%2hu] [0x%016jx]\n",
+                  pid, proc_name, tid, curr_aff.Group, curr_aff.Mask, new_aff->Group, new_aff->Mask);
 
         if (0 == SetThreadGroupAffinity(thread, new_aff, NULL)) {
                 pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
@@ -1285,8 +1291,9 @@ static int thread_node_rr_affinity_set(DWORD tid, void *data)
                 if (!proc->is_new && !proc->always_set) {
                         if (last_aff->Group == curr_aff.Group &&
                             last_aff->Mask == curr_aff.Mask) {
-                                pr_verbose("tid: %5lu pid: %5zu \"%ls\" affinity did not change\n", tid, pid,
-                                           proc_name);
+                                pr_rawlvl(VERBOSE,
+                                          "pid: %5zu \"%ls\" tid: %5lu affinity did not change\n",
+                                          pid, proc_name, tid);
                                 goto out;
                         }
                 }
@@ -1294,8 +1301,8 @@ static int thread_node_rr_affinity_set(DWORD tid, void *data)
 
         thread_node_map_update(sv, proc, &new_aff);
 
-        pr_rawlvl(DEBUG, "[tid: %5lu pid: %5zu \"%ls\"] [%2hu] [0x%016jx] ==> [%2hu] [0x%016jx]\n",
-                  tid, pid, proc_name, curr_aff.Group, curr_aff.Mask, new_aff.Group, new_aff.Mask);
+        pr_rawlvl(DEBUG, "[pid: %5zu \"%ls\" tid: %5lu] [%2hu] [0x%016jx] ==> [%2hu] [0x%016jx]\n",
+                  pid, proc_name, tid, curr_aff.Group, curr_aff.Mask, new_aff.Group, new_aff.Mask);
 
         if (0 == SetThreadGroupAffinity(thrd_hdl, &new_aff, NULL)) {
                 pr_err("SetThreadGroupAffinity() failed, tid=%lu pid=%zu \"%ls\" err=%lu\n",
@@ -1316,7 +1323,7 @@ not_exist:
         if (thrd_entry && delete) {
                 tommy_node *n = &thrd_entry->node;
 
-                pr_dbg("[tid: %5lu pid: %5zu \"%ls\"] delete thread\n", tid, pid, proc_name);
+                pr_dbg("[pid: %5zu \"%ls\" tid: %5lu] delete thread\n", pid, proc_name, tid);
 
                 tommy_hashtable_remove_existing(&proc->threads, n);
                 free(thrd_entry);
