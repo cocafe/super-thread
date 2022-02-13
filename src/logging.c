@@ -19,13 +19,16 @@ uint32_t g_console_show = 1;
 uint32_t g_console_is_hide;
 HWND g_console_hwnd = NULL;
 
-void console_show(void)
+void console_show(int set_focus)
 {
         if (!g_console_hwnd)
                 return;
 
         ShowWindow(g_console_hwnd, SW_NORMAL); // SW_RESTORE
         g_console_is_hide = 0;
+
+        if (set_focus)
+                SetFocus(g_console_hwnd);
 }
 
 void console_hide(void)

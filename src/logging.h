@@ -141,7 +141,7 @@ extern uint32_t g_console_is_hide;
 extern HWND g_console_wnd;
 
 void console_hide(void);
-void console_show(void);
+void console_show(int set_focus);
 int console_title_set(wchar_t *title);
 #endif
 
