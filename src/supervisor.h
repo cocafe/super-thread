@@ -33,8 +33,10 @@ struct thrd_entry {
 struct proc_info {
         wchar_t                 name[_MAX_FNAME];
         size_t                  pid;
-        PROCESS_PRIORITY_CLASS  proc_prio __attribute__((aligned(4)));
+        BOOL                    prio_boost;
+        PROCESS_PRIORITY_CLASS  prio_class __attribute__((aligned(4)));
         IO_PRIORITY_HINT        io_prio;
+        ULONG                   page_prio;
         GROUP_AFFINITY          curr_aff;
         uint8_t                 use_thread_affinity;
 };

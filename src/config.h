@@ -11,6 +11,13 @@
 
 #define MAX_PROC_GROUPS                 (8)
 
+enum tristate_val {
+        LEAVE_AS_IS = 0,
+        STRVAL_ENABLED,
+        STRVAL_DISABLED,
+        NUM_TRISTATE_VALS,
+};
+
 enum proc_identity_type {
         IDENTITY_NONE = 0,
         IDENTITY_PROCESS_EXE,
@@ -25,15 +32,27 @@ enum proc_id_str_filter {
         NUM_PROC_ID_STR_FILTERS,
 };
 
-enum proc_prio {
-        PROC_PRIO_UNCHANGED = 0,
-        PROC_PRIO_IDLE,
-        PROC_PRIO_NORMAL,
-        PROC_PRIO_HIGH,
-        PROC_PRIO_REALTIME,
-        PROC_PRIO_BELOW_NORMAL,
-        PROC_PRIO_ABOVE_NORMAL,
-        NUM_PROC_PRIOS,
+enum proc_prio_cls {
+        PROC_PRIO_CLS_UNCHANGED = 0,
+        PROC_PRIO_CLS_IDLE,
+        PROC_PRIO_CLS_BELOW_NORMAL,
+        PROC_PRIO_CLS_NORMAL,
+        PROC_PRIO_CLS_ABOVE_NORMAL,
+        PROC_PRIO_CLS_HIGH,
+        PROC_PRIO_CLS_REALTIME,
+        NUM_PROC_PRIO_CLASS,
+};
+
+enum thrd_prio_lvl {
+        THRD_PRIO_LVL_UNCHANGED = 0,
+        THRD_PRIO_LVL_IDLE,
+        THRD_PRIO_LVL_LOWEST,
+        THRD_PRIO_LVL_BELOW_NORMAL,
+        THRD_PRIO_LVL_NORMAL,
+        THRD_PRIO_LVL_ABOVE_NORMAL,
+        THRD_PRIO_LVL_HIGHEST,
+        THRD_PRIO_LVL_TIME_CRITICAL,
+        NUM_THRD_PRIO_LEVELS,
 };
 
 enum io_prio {
@@ -43,6 +62,17 @@ enum io_prio {
         IO_PRIO_NORMAL,
         IO_PRIO_HIGH,
         NUM_IO_PRIOS,
+};
+
+enum page_prio {
+        PAGE_PRIO_UNCHANGED = 0,
+        PAGE_PRIO_NORMAL,
+        PAGE_PRIO_BELOW_NORMAL,
+        PAGE_PRIO_MEDIUM,
+        PAGE_PRIO_LOW,
+        PAGE_PRIO_VERY_LOW,
+        PAGE_PRIO_LOWEST,
+        NUM_PAGE_PRIOS,
 };
 
 enum proc_node_balance {
@@ -77,6 +107,22 @@ struct proc_identity {
         struct proc_identity *file_hdl;
 };
 
+struct proc_cfg {
+        uint32_t                prio_class;
+        uint32_t                prio_boost;
+        uint32_t                page_prio;
+        uint32_t                io_prio;
+};
+
+struct thrd_cfg {
+        uint32_t                prio_level;
+        uint32_t                prio_level_least;
+        uint32_t                prio_boost;
+
+        uint32_t                page_prio;
+        uint32_t                io_prio;
+};
+
 struct supervisor_cfg {
         uint32_t node_map;
         uint32_t balance;
@@ -88,11 +134,11 @@ struct profile {
 
         uint32_t                enabled;
 
-        uint32_t                proc_prio;
-        uint32_t                io_prio;
-
         struct proc_identity   *id;
         size_t                  id_cnt;
+
+        struct proc_cfg         proc_cfg;
+        struct thrd_cfg         thrd_cfg;
 
         uint32_t                sched_mode;
         uint32_t                oneshot;

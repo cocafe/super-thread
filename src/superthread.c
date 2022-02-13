@@ -157,7 +157,7 @@ static void console_show_click(struct tray_menu *m)
 
         if (m->checked) {
                 g_console_show = 1;
-                console_show();
+                console_show(1);
 
                 pr_raw("====================================================================\n");
                 pr_raw("=== CLOSE THIS LOGGING WINDOW WILL TERMINATE PROGRAM, ^C TO HIDE ===\n");
@@ -230,7 +230,7 @@ void tray_lbtn_dblclick(struct tray *tray, void *data)
         UNUSED_PARAM(data);
 
         if (g_console_is_hide)
-                console_show();
+                console_show(1);
         else
                 console_hide();
 
@@ -291,50 +291,60 @@ struct tray_menu *profile_menu_find(struct tray_menu *top_menu)
         return m;
 }
 
-#define PROFILE_SINGLE_SWITCH_TRAY_CB(prop)                     \
-static void profile_##prop##_update(struct tray_menu *m)        \
+#define PROFILE_BOOL_SWITCH(name, type, offset) \
+static void profile_##name##_update(struct tray_menu *m)        \
 {                                                               \
         profile_t *profile = m->userdata;                       \
+        type *val = (void *)((uint8_t *)profile + offset);      \
                                                                 \
-        if (profile->prop)                                      \
+        if (*val)                                               \
                 m->checked = 1;                                 \
         else                                                    \
                 m->checked = 0;                                 \
 }                                                               \
-static void profile_##prop##_click(struct tray_menu *m)         \
+static void profile_##name##_click(struct tray_menu *m)         \
 {                                                               \
         profile_t *profile = m->userdata;                       \
+        type *val = (void *)((uint8_t *)profile + offset);      \
                                                                 \
         m->checked = !m->checked;                               \
                                                                 \
         if (m->checked)                                         \
-                profile->prop = 1;                              \
+                *val = 1;                                       \
         else                                                    \
-                profile->prop = 0;                              \
+                *val = 0;                                       \
 }
 
-PROFILE_SINGLE_SWITCH_TRAY_CB(enabled);
-PROFILE_SINGLE_SWITCH_TRAY_CB(oneshot);
-PROFILE_SINGLE_SWITCH_TRAY_CB(always_set);
+PROFILE_BOOL_SWITCH(enabled,    uint32_t, offsetof(profile_t, enabled));
+PROFILE_BOOL_SWITCH(oneshot,    uint32_t, offsetof(profile_t, oneshot));
+PROFILE_BOOL_SWITCH(always_set, uint32_t, offsetof(profile_t, always_set));
 
-#define PROFILE_VALUE_SWITCH_TRAY_CB(prop, type)                \
-static void profile_##prop##_update(struct tray_menu *m)        \
+#define PROFILE_VALUE_SWITCH(name, type, offset)                \
+static void profile_##name##_update(struct tray_menu *m)        \
 {                                                               \
         profile_t *profile = m->userdata;                       \
-        type val = (type)((size_t)m->userdata2);                \
+        type value = (type)((size_t)m->userdata2);              \
+        type *target = (void *)((uint8_t *)profile + offset);   \
                                                                 \
-        m->checked = profile->prop == val;                      \
+        m->checked = *target == value;                          \
 }                                                               \
-static void profile_##prop##_click(struct tray_menu *m)         \
+static void profile_##name##_click(struct tray_menu *m)         \
 {                                                               \
         profile_t *profile = m->userdata;                       \
-        type val = (type)((size_t)m->userdata2);                \
+        type value = (type)((size_t)m->userdata2);              \
+        type *target = (void *)((uint8_t *)profile + offset);   \
                                                                 \
-        if (profile->prop == val)                               \
+        if (*target == value)                                   \
                 return;                                         \
                                                                 \
-        profile->prop = val;                                    \
+        *target = value;                                        \
 }
+
+PROFILE_VALUE_SWITCH(sched_mode,          uint32_t, offsetof(profile_t, sched_mode));
+PROFILE_VALUE_SWITCH(proc_cfg_prio_class, uint32_t, offsetof(profile_t, proc_cfg.prio_class));
+PROFILE_VALUE_SWITCH(proc_cfg_prio_boost, uint32_t, offsetof(profile_t, proc_cfg.prio_boost));
+PROFILE_VALUE_SWITCH(proc_cfg_io_prio,    uint32_t, offsetof(profile_t, proc_cfg.io_prio));
+PROFILE_VALUE_SWITCH(proc_cfg_page_prio,  uint32_t, offsetof(profile_t, proc_cfg.page_prio));
 
 static void profile_sub_menu_update(struct tray_menu *m) {
         for (struct tray_menu *sub = m->submenu; sub; sub++) {
@@ -346,9 +356,13 @@ static void profile_sub_menu_update(struct tray_menu *m) {
         }
 }
 
-PROFILE_VALUE_SWITCH_TRAY_CB(sched_mode, uint32_t);
-PROFILE_VALUE_SWITCH_TRAY_CB(proc_prio, uint32_t);
-PROFILE_VALUE_SWITCH_TRAY_CB(io_prio, uint32_t);
+static void profile_proc_info_dump(struct tray_menu *m)
+{
+        profile_t *profile = m->userdata;
+
+        // XXX: need lock
+
+}
 
 static struct tray_menu profile_menu_template[] = {
         { .name = L"Enabled", .pre_show = profile_enabled_update, .on_click = profile_enabled_click },
@@ -373,93 +387,180 @@ static struct tray_menu profile_menu_template[] = {
                 },
         },
         {
-                .name = L"Process Priority",
+                .name = L"Process",
                 .pre_show = profile_sub_menu_update,
                 .submenu = (struct tray_menu[]) {
                         {
-                                .name = L"Leave as-is",
-                                .pre_show = profile_proc_prio_update,
-                                .on_click = profile_proc_prio_click,
-                                .userdata2 = (void *)PROC_PRIO_UNCHANGED,
+                                .name = L"Priority Boost",
+                                .pre_show = profile_sub_menu_update,
+                                .submenu = (struct tray_menu[]) {
+                                        {
+                                                .name = L"Leave as-is",
+                                                .pre_show = profile_proc_cfg_prio_boost_update,
+                                                .on_click = profile_proc_cfg_prio_boost_click,
+                                                .userdata2 = (void *)LEAVE_AS_IS,
+                                        },
+                                        {
+                                                .is_separator = 1
+                                        },
+                                        {
+                                                .name = L"Enabled",
+                                                .pre_show = profile_proc_cfg_prio_boost_update,
+                                                .on_click = profile_proc_cfg_prio_boost_click,
+                                                .userdata2 = (void *)STRVAL_ENABLED,
+                                        },
+                                        {
+                                                .name = L"Disabled",
+                                                .pre_show = profile_proc_cfg_prio_boost_update,
+                                                .on_click = profile_proc_cfg_prio_boost_click,
+                                                .userdata2 = (void *)STRVAL_DISABLED,
+                                        },
+                                        { .is_end = 1 },
+                                },
                         },
                         {
-                                .is_separator = 1
+                                .name = L"Priority Class",
+                                .pre_show = profile_sub_menu_update,
+                                .submenu = (struct tray_menu[]) {
+                                        {
+                                                .name = L"Leave as-is",
+                                                .pre_show = profile_proc_cfg_prio_class_update,
+                                                .on_click = profile_proc_cfg_prio_class_click,
+                                                .userdata2 = (void *)PROC_PRIO_CLS_UNCHANGED,
+                                        },
+                                        {
+                                                .is_separator = 1
+                                        },
+                                        {
+                                                .name = L"Idle",
+                                                .pre_show = profile_proc_cfg_prio_class_update,
+                                                .on_click = profile_proc_cfg_prio_class_click,
+                                                .userdata2 = (void *)PROC_PRIO_CLS_IDLE,
+                                        },
+                                        {
+                                                .name = L"Normal -",
+                                                .pre_show = profile_proc_cfg_prio_class_update,
+                                                .on_click = profile_proc_cfg_prio_class_click,
+                                                .userdata2 = (void *)PROC_PRIO_CLS_BELOW_NORMAL,
+                                        },
+                                        {
+                                                .name = L"Normal",
+                                                .pre_show = profile_proc_cfg_prio_class_update,
+                                                .on_click = profile_proc_cfg_prio_class_click,
+                                                .userdata2 = (void *)PROC_PRIO_CLS_NORMAL,
+                                        },
+                                        {
+                                                .name = L"Normal +",
+                                                .pre_show = profile_proc_cfg_prio_class_update,
+                                                .on_click = profile_proc_cfg_prio_class_click,
+                                                .userdata2 = (void *)PROC_PRIO_CLS_ABOVE_NORMAL,
+                                        },
+                                        {
+                                                .name = L"High",
+                                                .pre_show = profile_proc_cfg_prio_class_update,
+                                                .on_click = profile_proc_cfg_prio_class_click,
+                                                .userdata2 = (void *)PROC_PRIO_CLS_HIGH,
+                                        },
+                                        {
+                                                .name = L"Realtime",
+                                                .pre_show = profile_proc_cfg_prio_class_update,
+                                                .on_click = profile_proc_cfg_prio_class_click,
+                                                .userdata2 = (void *)PROC_PRIO_CLS_REALTIME,
+                                        },
+                                        { .is_end = 1 },
+                                },
                         },
                         {
-                                .name = L"Idle",
-                                .pre_show = profile_proc_prio_update,
-                                .on_click = profile_proc_prio_click,
-                                .userdata2 = (void *)PROC_PRIO_IDLE,
+                                .name = L"IO Priority",
+                                .pre_show = profile_sub_menu_update,
+                                .submenu = (struct tray_menu[]) {
+                                        {
+                                                .name = L"Leave as-is",
+                                                .pre_show = profile_proc_cfg_io_prio_update,
+                                                .on_click = profile_proc_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_UNCHANGED,
+                                        },
+                                        {
+                                                .is_separator = 1
+                                        },
+                                        {
+                                                .name = L"Very Low",
+                                                .pre_show = profile_proc_cfg_io_prio_update,
+                                                .on_click = profile_proc_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_VERY_LOW,
+                                        },
+                                        {
+                                                .name = L"Low",
+                                                .pre_show = profile_proc_cfg_io_prio_update,
+                                                .on_click = profile_proc_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_LOW,
+                                        },
+                                        {
+                                                .name = L"Normal",
+                                                .pre_show = profile_proc_cfg_io_prio_update,
+                                                .on_click = profile_proc_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_NORMAL,
+                                        },
+                                        {
+                                                .name = L"High",
+                                                .pre_show = profile_proc_cfg_io_prio_update,
+                                                .on_click = profile_proc_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_HIGH,
+                                        },
+                                        { .is_end = 1 },
+                                },
                         },
                         {
-                                .name = L"Normal -",
-                                .pre_show = profile_proc_prio_update,
-                                .on_click = profile_proc_prio_click,
-                                .userdata2 = (void *)PROC_PRIO_BELOW_NORMAL,
-                        },
-                        {
-                                .name = L"Normal",
-                                .pre_show = profile_proc_prio_update,
-                                .on_click = profile_proc_prio_click,
-                                .userdata2 = (void *)PROC_PRIO_NORMAL,
-                        },
-                        {
-                                .name = L"Normal +",
-                                .pre_show = profile_proc_prio_update,
-                                .on_click = profile_proc_prio_click,
-                                .userdata2 = (void *)PROC_PRIO_ABOVE_NORMAL,
-                        },
-                        {
-                                .name = L"High",
-                                .pre_show = profile_proc_prio_update,
-                                .on_click = profile_proc_prio_click,
-                                .userdata2 = (void *)PROC_PRIO_HIGH,
-                        },
-                        {
-                                .name = L"Realtime",
-                                .pre_show = profile_proc_prio_update,
-                                .on_click = profile_proc_prio_click,
-                                .userdata2 = (void *)PROC_PRIO_REALTIME,
-                        },
-                        { .is_end = 1 },
-                },
-        },
-        {
-                .name = L"IO Priority",
-                .pre_show = profile_sub_menu_update,
-                .submenu = (struct tray_menu[]) {
-                        {
-                                .name = L"Leave as-is",
-                                .pre_show = profile_io_prio_update,
-                                .on_click = profile_io_prio_click,
-                                .userdata2 = (void *)IO_PRIO_UNCHANGED,
-                        },
-                        {
-                                .is_separator = 1
-                        },
-                        {
-                                .name = L"Very Low",
-                                .pre_show = profile_io_prio_update,
-                                .on_click = profile_io_prio_click,
-                                .userdata2 = (void *)IO_PRIO_VERY_LOW,
-                        },
-                        {
-                                .name = L"Low",
-                                .pre_show = profile_io_prio_update,
-                                .on_click = profile_io_prio_click,
-                                .userdata2 = (void *)IO_PRIO_LOW,
-                        },
-                        {
-                                .name = L"Normal",
-                                .pre_show = profile_io_prio_update,
-                                .on_click = profile_io_prio_click,
-                                .userdata2 = (void *)IO_PRIO_NORMAL,
-                        },
-                        {
-                                .name = L"High",
-                                .pre_show = profile_io_prio_update,
-                                .on_click = profile_io_prio_click,
-                                .userdata2 = (void *)IO_PRIO_HIGH,
+                                .name = L"Page Priority",
+                                .pre_show = profile_sub_menu_update,
+                                .submenu = (struct tray_menu[]) {
+                                        {
+                                                .name = L"Leave as-is",
+                                                .pre_show = profile_proc_cfg_page_prio_update,
+                                                .on_click = profile_proc_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_UNCHANGED,
+                                        },
+                                        {
+                                                .is_separator = 1
+                                        },
+                                        {
+                                                .name = L"Lowest",
+                                                .pre_show = profile_proc_cfg_page_prio_update,
+                                                .on_click = profile_proc_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_LOWEST,
+                                        },
+                                        {
+                                                .name = L"Very Low",
+                                                .pre_show = profile_proc_cfg_page_prio_update,
+                                                .on_click = profile_proc_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_VERY_LOW,
+                                        },
+                                        {
+                                                .name = L"Low",
+                                                .pre_show = profile_proc_cfg_page_prio_update,
+                                                .on_click = profile_proc_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_LOW,
+                                        },
+                                        {
+                                                .name = L"Medium",
+                                                .pre_show = profile_proc_cfg_page_prio_update,
+                                                .on_click = profile_proc_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_MEDIUM,
+                                        },
+                                        {
+                                                .name = L"Normal-",
+                                                .pre_show = profile_proc_cfg_page_prio_update,
+                                                .on_click = profile_proc_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_BELOW_NORMAL,
+                                        },
+                                        {
+                                                .name = L"Normal",
+                                                .pre_show = profile_proc_cfg_page_prio_update,
+                                                .on_click = profile_proc_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_NORMAL,
+                                        },
+                                        { .is_end = 1 },
+                                },
                         },
                         { .is_end = 1 },
                 },
@@ -467,6 +568,8 @@ static struct tray_menu profile_menu_template[] = {
         { .is_separator = 1 },
         { .name = L"Oneshot", .pre_show = profile_oneshot_update, .on_click = profile_oneshot_click },
         { .name = L"Always Set", .pre_show = profile_always_set_update, .on_click = profile_always_set_click },
+        { .is_separator = 1 },
+        { .name = L"Info Dump", .on_click = profile_proc_info_dump, },
         { .is_end = 1 },
 };
 

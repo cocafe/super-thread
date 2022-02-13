@@ -6,6 +6,8 @@
 #include "sysinfo.h"
 #include "superthread.h"
 
+#define STR_LEAVE_AS_IS                 "leave_as-is"
+
 static char *proc_identity_type_strs[] = {
         [IDENTITY_NONE]                 = "none",
         [IDENTITY_PROCESS_EXE]          = "process",
@@ -18,18 +20,39 @@ static char *proc_identity_filter_strs[] = {
         [STR_FILTER_CONTAIN]            = "contains",
 };
 
-static char *proc_prio_strs[] = {
-        [PROC_PRIO_UNCHANGED]           = "leave_as-is",
-        [PROC_PRIO_IDLE]                = "idle",
-        [PROC_PRIO_NORMAL]              = "normal",
-        [PROC_PRIO_HIGH]                = "high",
-        [PROC_PRIO_REALTIME]            = "realtime",
-        [PROC_PRIO_BELOW_NORMAL]        = "normal-",
-        [PROC_PRIO_ABOVE_NORMAL]        = "normal+",
+static char *prio_cls_strs[] = {
+        [PROC_PRIO_CLS_UNCHANGED]       = STR_LEAVE_AS_IS,
+        [PROC_PRIO_CLS_IDLE]            = "idle",
+        [PROC_PRIO_CLS_NORMAL]          = "normal",
+        [PROC_PRIO_CLS_HIGH]            = "high",
+        [PROC_PRIO_CLS_REALTIME]        = "realtime",
+        [PROC_PRIO_CLS_BELOW_NORMAL]    = "normal-",
+        [PROC_PRIO_CLS_ABOVE_NORMAL]    = "normal+",
+};
+
+static char *prio_lvl_strs[] = {
+        [THRD_PRIO_LVL_UNCHANGED]       = STR_LEAVE_AS_IS,
+        [THRD_PRIO_LVL_IDLE]            = "idle",
+        [THRD_PRIO_LVL_LOWEST]          = "lowest",
+        [THRD_PRIO_LVL_BELOW_NORMAL]    = "normal-",
+        [THRD_PRIO_LVL_NORMAL]          = "normal",
+        [THRD_PRIO_LVL_ABOVE_NORMAL]    = "normal+",
+        [THRD_PRIO_LVL_HIGHEST]         = "highest",
+        [THRD_PRIO_LVL_TIME_CRITICAL]   = "time_critical",
+};
+
+static char *page_prio_strs[] = {
+        [PAGE_PRIO_UNCHANGED]           = STR_LEAVE_AS_IS,
+        [PAGE_PRIO_NORMAL]              = "normal",
+        [PAGE_PRIO_BELOW_NORMAL]        = "normal-",
+        [PAGE_PRIO_MEDIUM]              = "medium",
+        [PAGE_PRIO_LOW]                 = "low",
+        [PAGE_PRIO_VERY_LOW]            = "very_low",
+        [PAGE_PRIO_LOWEST]              = "lowest",
 };
 
 static char *io_prio_strs[] = {
-        [IO_PRIO_UNCHANGED]             = "leave_as-is",
+        [IO_PRIO_UNCHANGED]             = STR_LEAVE_AS_IS,
         [IO_PRIO_VERY_LOW]              = "very_low",
         [IO_PRIO_LOW]                   = "low",
         [IO_PRIO_NORMAL]                = "normal",
@@ -53,6 +76,12 @@ static char *thrd_balance_strs[] = {
 static char *supervisor_mode_strs[] = {
         [SUPERVISOR_PROCESSES]          = "processes",
         [SUPERVISOR_THREADS]            = "threads",
+};
+
+static char *tristate_strs[] = {
+        [LEAVE_AS_IS]                   = STR_LEAVE_AS_IS,
+        [STRVAL_ENABLED]                = "enabled",
+        [STRVAL_DISABLED]               = "disabled",
 };
 
 int usrcfg_root_key_create(jbuf_t *b)
@@ -98,8 +127,6 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                 jbuf_offset_add(b, wstrptr, "name", offsetof(profile_t, name));
                 jbuf_offset_add(b, bool, "enabled", offsetof(profile_t, enabled));
-                jbuf_offset_strval_add(b, "proc_prio", offsetof(profile_t, proc_prio), proc_prio_strs, NUM_PROC_PRIOS);
-                jbuf_offset_strval_add(b, "io_prio", offsetof(profile_t, io_prio), io_prio_strs, NUM_IO_PRIOS);
 
                 {
                         void *id_arr = jbuf_grow_arr_open(b, "identity");
@@ -145,6 +172,42 @@ int usrcfg_root_key_create(jbuf_t *b)
                         }
 
                         jbuf_arr_close(b, id_arr);
+                }
+
+                {
+                        void *process_cfg;
+
+                        jbuf_offset_obj_open(b, process_cfg, "process", offsetof(profile_t, proc_cfg));
+
+                        jbuf_offset_strval_add(b, "prio_class", offsetof(struct proc_cfg, prio_class), prio_cls_strs, NUM_PROC_PRIO_CLASS);
+                        jbuf_offset_strval_add(b, "prio_boost", offsetof(struct proc_cfg, prio_boost), tristate_strs, NUM_TRISTATE_VALS);
+                        jbuf_offset_strval_add(b, "io_prio", offsetof(struct proc_cfg, io_prio), io_prio_strs, NUM_IO_PRIOS);
+                        jbuf_offset_strval_add(b, "page_prio", offsetof(struct proc_cfg, page_prio), page_prio_strs, NUM_PAGE_PRIOS);
+
+                        jbuf_obj_close(b, process_cfg);
+                }
+
+                {
+                        void *thread_cfg;
+
+                        jbuf_offset_obj_open(b, thread_cfg, "thread", offsetof(profile_t, thrd_cfg));
+
+                        {
+                                void *prio_level_obj;
+
+                                jbuf_offset_obj_open(b, prio_level_obj, "prio_level", 0);
+
+                                jbuf_offset_add(b, bool, "at_least", offsetof(struct thrd_cfg, prio_level_least));
+                                jbuf_offset_strval_add(b, "level", offsetof(struct thrd_cfg, prio_level), prio_lvl_strs, NUM_THRD_PRIO_LEVELS);
+
+                                jbuf_obj_close(b, prio_level_obj);
+                        }
+
+                        jbuf_offset_strval_add(b, "io_prio", offsetof(struct thrd_cfg, io_prio), io_prio_strs, NUM_IO_PRIOS);
+                        jbuf_offset_strval_add(b, "page_prio", offsetof(struct thrd_cfg, page_prio), page_prio_strs, NUM_PAGE_PRIOS);
+                        jbuf_offset_strval_add(b, "prio_boost", offsetof(struct thrd_cfg, prio_boost), tristate_strs, NUM_TRISTATE_VALS);
+
+                        jbuf_obj_close(b, thread_cfg);
                 }
 
                 {

@@ -34,13 +34,13 @@
 supervisor_t g_sv = { 0 };
 
 static uint8_t priofile_proc_prio_cls[] = {
-        [PROC_PRIO_UNCHANGED]           = ProcPrioClassUnknown,
-        [PROC_PRIO_IDLE]                = ProcPrioClassIdle,
-        [PROC_PRIO_NORMAL]              = ProcPrioClassNormal,
-        [PROC_PRIO_HIGH]                = ProcPrioClassHigh,
-        [PROC_PRIO_REALTIME]            = ProcPrioClassRealtime,
-        [PROC_PRIO_BELOW_NORMAL]        = ProcPrioClassBelowNormal,
-        [PROC_PRIO_ABOVE_NORMAL]        = ProcPrioClassAboveNormal,
+        [PROC_PRIO_CLS_UNCHANGED]           = 0,
+        [PROC_PRIO_CLS_IDLE]                = ProcPrioClassIdle,
+        [PROC_PRIO_CLS_BELOW_NORMAL]        = ProcPrioClassBelowNormal,
+        [PROC_PRIO_CLS_NORMAL]              = ProcPrioClassNormal,
+        [PROC_PRIO_CLS_ABOVE_NORMAL]        = ProcPrioClassAboveNormal,
+        [PROC_PRIO_CLS_HIGH]                = ProcPrioClassHigh,
+        [PROC_PRIO_CLS_REALTIME]            = ProcPrioClassRealtime,
 };
 
 static int32_t profile_ioprio_ntval[] = {
@@ -49,6 +49,83 @@ static int32_t profile_ioprio_ntval[] = {
         [IO_PRIO_LOW]                   = IoPriorityLow,
         [IO_PRIO_NORMAL]                = IoPriorityNormal,
         [IO_PRIO_HIGH]                  = IoPriorityHigh,
+};
+
+static ULONG profile_page_prio_ntval[] = {
+        [PAGE_PRIO_UNCHANGED]           = 0,
+        [PAGE_PRIO_NORMAL]              = MEMORY_PRIORITY_NORMAL,
+        [PAGE_PRIO_BELOW_NORMAL]        = MEMORY_PRIORITY_BELOW_NORMAL,
+        [PAGE_PRIO_MEDIUM]              = MEMORY_PRIORITY_MEDIUM,
+        [PAGE_PRIO_LOW]                 = MEMORY_PRIORITY_LOW,
+        [PAGE_PRIO_VERY_LOW]            = MEMORY_PRIORITY_VERY_LOW,
+        [PAGE_PRIO_LOWEST]              = MEMORY_PRIORITY_LOWEST,
+};
+
+/**
+ * https://docs.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities
+ *
+ * scheduler use thread base priority (0~31[highest]) to determine scheduling.
+ *
+ * thread base priority is determined by:
+ *      o process priority class
+ *      o thread priority level
+ *
+ */
+static uint8_t thread_base_priority[NUM_PROC_PRIO_CLASS][NUM_THRD_PRIO_LEVELS] = {
+        [PROC_PRIO_CLS_IDLE]    = {
+                [THRD_PRIO_LVL_IDLE]            = 1,
+                [THRD_PRIO_LVL_LOWEST]          = 2,
+                [THRD_PRIO_LVL_BELOW_NORMAL]    = 3,
+                [THRD_PRIO_LVL_NORMAL]          = 4,
+                [THRD_PRIO_LVL_ABOVE_NORMAL]    = 5,
+                [THRD_PRIO_LVL_HIGHEST]         = 6,
+                [THRD_PRIO_LVL_TIME_CRITICAL]   = 15,
+        },
+        [PROC_PRIO_CLS_BELOW_NORMAL]    = {
+                [THRD_PRIO_LVL_IDLE]            = 1,
+                [THRD_PRIO_LVL_LOWEST]          = 4,
+                [THRD_PRIO_LVL_BELOW_NORMAL]    = 5,
+                [THRD_PRIO_LVL_NORMAL]          = 6,
+                [THRD_PRIO_LVL_ABOVE_NORMAL]    = 7,
+                [THRD_PRIO_LVL_HIGHEST]         = 8,
+                [THRD_PRIO_LVL_TIME_CRITICAL]   = 15,
+        },
+        [PROC_PRIO_CLS_NORMAL]  = {
+                [THRD_PRIO_LVL_IDLE]            = 1,
+                [THRD_PRIO_LVL_LOWEST]          = 6,
+                [THRD_PRIO_LVL_BELOW_NORMAL]    = 7,
+                [THRD_PRIO_LVL_NORMAL]          = 8,
+                [THRD_PRIO_LVL_ABOVE_NORMAL]    = 9,
+                [THRD_PRIO_LVL_HIGHEST]         = 10,
+                [THRD_PRIO_LVL_TIME_CRITICAL]   = 15,
+        },
+        [PROC_PRIO_CLS_ABOVE_NORMAL]    = {
+                [THRD_PRIO_LVL_IDLE]            = 1,
+                [THRD_PRIO_LVL_LOWEST]          = 8,
+                [THRD_PRIO_LVL_BELOW_NORMAL]    = 9,
+                [THRD_PRIO_LVL_NORMAL]          = 10,
+                [THRD_PRIO_LVL_ABOVE_NORMAL]    = 11,
+                [THRD_PRIO_LVL_HIGHEST]         = 12,
+                [THRD_PRIO_LVL_TIME_CRITICAL]   = 15,
+        },
+        [PROC_PRIO_CLS_HIGH]    = {
+                [THRD_PRIO_LVL_IDLE]            = 1,
+                [THRD_PRIO_LVL_LOWEST]          = 11,
+                [THRD_PRIO_LVL_BELOW_NORMAL]    = 12,
+                [THRD_PRIO_LVL_NORMAL]          = 13,
+                [THRD_PRIO_LVL_ABOVE_NORMAL]    = 14,
+                [THRD_PRIO_LVL_HIGHEST]         = 15,
+                [THRD_PRIO_LVL_TIME_CRITICAL]   = 15,
+        },
+        [PROC_PRIO_CLS_REALTIME]        = {
+                [THRD_PRIO_LVL_IDLE]            = 16,
+                [THRD_PRIO_LVL_LOWEST]          = 22,
+                [THRD_PRIO_LVL_BELOW_NORMAL]    = 23,
+                [THRD_PRIO_LVL_NORMAL]          = 24,
+                [THRD_PRIO_LVL_ABOVE_NORMAL]    = 25,
+                [THRD_PRIO_LVL_HIGHEST]         = 26,
+                [THRD_PRIO_LVL_TIME_CRITICAL]   = 31,
+        },
 };
 
 static int system_info_query(void **info, SYSTEM_INFORMATION_CLASS type, size_t *size)
@@ -343,16 +420,6 @@ static int proc_group_affinity_get(HANDLE process, GROUP_AFFINITY *gf)
         pgi = HeapAlloc(heap, HEAP_ZERO_MEMORY, pgi_sz);
 
         status = NtQueryInformationProcess(process,
-                                           ProcessGroupInformation,
-                                           pgi,
-                                           pgi_sz,
-                                           &needed);
-        if (!NT_SUCCESS(status)) {
-                pr_err("failed to query process group info, err=%lu\n", GetLastError());
-                return -EFAULT;
-        }
-
-        status = NtQueryInformationProcess(process,
                                            ProcessBasicInformation,
                                            &pbi,
                                            sizeof(pbi),
@@ -363,6 +430,21 @@ static int proc_group_affinity_get(HANDLE process, GROUP_AFFINITY *gf)
                 goto out;
         }
 
+        // process is already become threaded
+        if (pbi.AffinityMask == 0x00)
+                goto write;
+
+        status = NtQueryInformationProcess(process,
+                                           ProcessGroupInformation,
+                                           pgi,
+                                           pgi_sz,
+                                           &needed);
+        if (!NT_SUCCESS(status)) {
+                pr_err("failed to query process group info, err=%lu\n", GetLastError());
+                return -EFAULT;
+        }
+
+write:
         memset(gf, 0x00, sizeof(GROUP_AFFINITY));
         gf->Mask = pbi.AffinityMask;
         gf->Group = *pgi;
@@ -428,8 +510,7 @@ int process_prio_cls_get(HANDLE process, PROCESS_PRIORITY_CLASS *prio_cls)
                                                ProcessPriorityClass,
                                                prio_cls,
                                                sizeof(PROCESS_PRIORITY_CLASS),
-                                               NULL
-                                              );
+                                               NULL);
         if (!NT_SUCCESS(status)) {
                 pr_err("NtQueryInformationProcess(): ProcessPriorityClass failed, status=0x%08x\n", status);
                 return -EFAULT;
@@ -443,12 +524,53 @@ int process_prio_cls_set(HANDLE process, PROCESS_PRIORITY_CLASS *prio_cls)
         int status = NtSetInformationProcess(process,
                                              ProcessPriorityClass,
                                              prio_cls,
-                                             sizeof(PROCESS_PRIORITY_CLASS)
-                                            );
+                                             sizeof(PROCESS_PRIORITY_CLASS));
         if (!NT_SUCCESS(status)) {
                 pr_err("NtSetInformationProcess(): PriocessPriorityClass failed, status=0x%08x\n", status);
                 return -EFAULT;
         }
+
+        return 0;
+}
+
+int process_prio_boost_get(HANDLE process, BOOL *prio_boost)
+{
+        BOOL is_disabled = 0;
+
+        if (0 == GetProcessPriorityBoost(process, &is_disabled)) {
+                pr_err("GetProcessPriorityBoost() failed, err=%lu\n", GetLastError());
+                return -EFAULT;
+        }
+
+        *prio_boost = !is_disabled;
+
+        return 0;
+}
+
+int process_prio_boost_set(HANDLE process, BOOL enable)
+{
+        if (0 == SetProcessPriorityBoost(process, !enable)) {
+                pr_err("SetProcessPriorityBoost() failed, err=%lu\n", GetLastError());
+                return -EFAULT;
+        }
+
+        return 0;
+}
+
+int process_page_prio_get(HANDLE process, ULONG *page_prio)
+{
+        int status = PhGetProcessPagePriority(process, page_prio);
+        if (!NT_SUCCESS(status))
+                return -EFAULT;
+
+        return 0;
+}
+
+int process_page_prio_set(HANDLE process, ULONG page_prio)
+{
+        int status = PhSetProcessPagePriority(process, page_prio);
+        if (!NT_SUCCESS(status))
+                return -EFAULT;
 
         return 0;
 }
@@ -931,37 +1053,50 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                 [ProcPrioClassIdle]             = "idle",
                 [ProcPrioClassNormal]           = "normal",
                 [ProcPrioClassHigh]             = "high",
-                [ProcPrioClassRealtime]         = "realtime",
+                [ProcPrioClassRealtime]         = "rt",
                 [ProcPrioClassBelowNormal]      = "normal-",
                 [ProcPrioClassAboveNormal]      = "normal+",
         };
 
         static const char *io_prio_strs[] = {
-                [IoPriorityVeryLow]             = "very_low",
+                [IoPriorityVeryLow]             = "low-",
                 [IoPriorityLow]                 = "low",
                 [IoPriorityNormal]              = "normal",
                 [IoPriorityHigh]                = "high",
-                [IoPriorityCritical]            = "critical",
+                [IoPriorityCritical]            = "crit",
+        };
+
+        static const char *page_prio_strs[] = {
+                [MEMORY_PRIORITY_LOWEST]        = "low--",
+                [MEMORY_PRIORITY_VERY_LOW]      = "low-",
+                [MEMORY_PRIORITY_LOW]           = "low",
+                [MEMORY_PRIORITY_MEDIUM]        = "medium",
+                [MEMORY_PRIORITY_BELOW_NORMAL]  = "normal-",
+                [MEMORY_PRIORITY_NORMAL]        = "normal",
         };
 
         if (tbl->count == 0)
                 return;
 
-        pr_raw("+------------+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
-        pr_raw("| profile    | pid   | name               | proc prio | io prio | threaded | node | affinity           |\n");
-        pr_raw("+------------+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
+        pr_raw("+------------+-------+--------------------+------------------------------------+----------+---------------------------+\n");
+        pr_raw("| profile    | pid   | name               | priority info                      | threaded | node | affinity mask      |\n");
+        pr_raw("|            |       |                    |---------+---------+--------+-------|          |      |                    |\n");
+        pr_raw("|            |       |                    | class   | page    | io     | boost |          |      |                    |\n");
+        pr_raw("+------------+-------+--------------------+---------+---------+--------+-------+----------+------+--------------------+\n");
 
         for (size_t i = 0; i < tbl->bucket_max; i++) {
                 tommy_node *n = tbl->bucket[i];
 
                 while (n) {
-                        proc_entry_t *entry = n->data;
-                        proc_info_t *info = &entry->info;
-                        profile_t *profile = &g_cfg.profiles[entry->profile_idx];
-                        uint8_t proc_prio = info->proc_prio.PriorityClass;
-                        uint8_t io_prio = info->io_prio;
+                        proc_entry_t *entry      = n->data;
+                        proc_info_t *info        = &entry->info;
+                        profile_t *profile       = &g_cfg.profiles[entry->profile_idx];
+                        uint8_t page_prio        = info->page_prio;
+                        uint8_t io_prio          = info->io_prio;
+                        uint8_t prio_boost       = info->prio_boost;
+                        uint8_t prio_class       = info->prio_class.PriorityClass;
                         wchar_t profile_name[11] = { 0 };
-                        wchar_t name[18] = { 0 };
+                        wchar_t name[18]         = { 0 };
 
                         wcsncpy(profile_name, profile->name, WCBUF_LEN(profile_name));
                         profile_name[WCBUF_LEN(profile_name) - 1] = L'\0';
@@ -969,12 +1104,14 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                         wcsncpy(name, info->name, WCBUF_LEN(name));
                         name[WCBUF_LEN(name) - 1] = L'\0';
 
-                        pr_raw("| %-10ls | %-5zu | %-18ls | %-9s | %-7s | %-8d | %-4d | 0x%016jx |\n",
+                        pr_raw("| %-10ls | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
                                profile_name,
                                info->pid,
                                name,
-                               proc_prio < MaxProcPrioClasses ? proc_prio_strs[proc_prio] : "ERR",
+                               prio_class < MaxProcPrioClasses ? proc_prio_strs[prio_class] : "ERR",
+                               page_prio > MEMORY_PRIORITY_NORMAL ? "ERR" : page_prio_strs[page_prio],
                                io_prio < MaxIoPriorityTypes ? io_prio_strs[io_prio] : "ERR",
+                               prio_boost,
                                info->use_thread_affinity,
                                info->curr_aff.Group,
                                info->curr_aff.Mask);
@@ -983,20 +1120,21 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                 }
         }
 
-        pr_raw("+------------+-------+--------------------+-----------+---------+----------+------+--------------------+\n");
+        pr_raw("+------------+-------+--------------------+---------+---------+--------+-------+----------+------+--------------------+\n");
 }
 
-int profile_proc_prio_set(profile_t *profile, HANDLE process)
+static int profile_proc_prio_class_set(profile_t *profile, HANDLE process)
 {
         PROCESS_PRIORITY_CLASS prio_class __attribute__((aligned(4))) = { 0 };
+        uint32_t prio_cls_cfg = profile->proc_cfg.prio_class;
 
-        if (profile->proc_prio >= NUM_PROC_PRIOS)
+        if (prio_cls_cfg >= NUM_PROC_PRIO_CLASS)
                 return -EINVAL;
 
-        if (profile->proc_prio == PROC_PRIO_UNCHANGED)
+        if (prio_cls_cfg == PROC_PRIO_CLS_UNCHANGED)
                 return 0;
 
-        prio_class.PriorityClass = priofile_proc_prio_cls[profile->proc_prio];
+        prio_class.PriorityClass = priofile_proc_prio_cls[prio_cls_cfg];
 
         if (process_prio_cls_set(process, &prio_class))
                 return -EFAULT;
@@ -1004,22 +1142,57 @@ int profile_proc_prio_set(profile_t *profile, HANDLE process)
         return 0;
 }
 
-int profile_prio_ioprio_set(profile_t *profile, HANDLE process)
+static int profile_proc_prio_boost_set(profile_t *profile, HANDLE process)
 {
-        IO_PRIORITY_HINT io_prio;
+        BOOL enabled;
+        uint32_t prio_boost_cfg = profile->proc_cfg.prio_boost;
 
-        if (profile->io_prio >= NUM_IO_PRIOS)
+        if (prio_boost_cfg >= NUM_TRISTATE_VALS)
                 return -EINVAL;
 
-        if (profile->io_prio == IO_PRIO_UNCHANGED)
+        if (prio_boost_cfg == LEAVE_AS_IS)
                 return 0;
 
-        io_prio = profile_ioprio_ntval[profile->io_prio];
+        enabled = 0;
+        if (prio_boost_cfg == STRVAL_ENABLED)
+                enabled = 1;
+
+        return process_prio_boost_set(process, enabled);
+}
+
+static int profile_proc_io_prio_set(profile_t *profile, HANDLE process)
+{
+        IO_PRIORITY_HINT io_prio;
+        uint32_t io_prio_cfg = profile->proc_cfg.io_prio;
+
+        if (io_prio_cfg >= NUM_IO_PRIOS)
+                return -EINVAL;
+
+        if (io_prio_cfg == IO_PRIO_UNCHANGED)
+                return 0;
+
+        io_prio = profile_ioprio_ntval[io_prio_cfg];
 
         if (process_io_prio_set(process, &io_prio))
                 return -EFAULT;
 
         return 0;
+}
+
+static int profile_proc_page_prio_set(profile_t *profile, HANDLE process)
+{
+        ULONG page_prio;
+        uint32_t page_prio_cfg = profile->proc_cfg.page_prio;
+
+        if (page_prio_cfg > NUM_PAGE_PRIOS)
+                return -EINVAL;
+
+        if (page_prio_cfg == PAGE_PRIO_UNCHANGED)
+                return 0;
+
+        page_prio = profile_page_prio_ntval[page_prio_cfg];
+
+        return process_page_prio_set(process, page_prio);
 }
 
 static void affinity_mask_limit(GROUP_AFFINITY *new_aff, uint64_t affinity, uint32_t group)
@@ -1462,7 +1635,13 @@ static int process_info_update(proc_info_t *info, HANDLE process)
         if ((err = process_io_prio_get(process, &info->io_prio)))
                 return err;
 
-        if ((err = process_prio_cls_get(process, &info->proc_prio)))
+        if ((err = process_prio_cls_get(process, &info->prio_class)))
+                return err;
+
+        if ((err = process_prio_boost_get(process, &info->prio_boost)))
+                return err;
+
+        if ((err = process_page_prio_get(process, &info->page_prio)))
                 return err;
 
         if ((err = proc_group_affinity_get(process, &info->curr_aff)))
@@ -1473,6 +1652,25 @@ static int process_info_update(proc_info_t *info, HANDLE process)
                 info->use_thread_affinity = 1;
 
         return err;
+}
+
+static int process_config_apply(profile_t *profile, HANDLE process)
+{
+        int err;
+
+        if ((err = profile_proc_prio_class_set(profile, process)))
+                return err;
+
+        if ((err = profile_proc_prio_boost_set(profile, process)))
+                return err;
+
+        if ((err = profile_proc_io_prio_set(profile, process)))
+                return err;
+
+        if ((err = profile_proc_page_prio_set(profile, process)))
+                return err;
+
+        return 0;
 }
 
 static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
@@ -1509,7 +1707,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         }
 
         if (status != STILL_ACTIVE) {
-                pr_info("pid %zu \"%ls\" is no longer existed\n", info->pid, info->name);
+                pr_info("pid %zu \"%ls\" has been terminated\n", info->pid, info->name);
                 err = -ENOENT;
                 goto out;
         }
@@ -1534,10 +1732,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         if (profile->oneshot && proc->oneshot)
                 goto out;
 
-        if ((err = profile_proc_prio_set(profile, process)))
-                goto out;
-
-        if ((err = profile_prio_ioprio_set(profile, process)))
+        if ((err = process_config_apply(profile, process)))
                 goto out;
 
         switch (profile->sched_mode) {
