@@ -158,6 +158,17 @@ struct config {
 
 extern struct config g_cfg;
 
+extern char *cfg_identity_type_strs[];
+extern char *cfg_identity_filter_strs[];
+extern char *cfg_prio_cls_strs[];
+extern char *cfg_prio_lvl_strs[];
+extern char *cfg_page_prio_strs[];
+extern char *cfg_io_prio_strs[];
+extern char *cfg_proc_balance_strs[];
+extern char *cfg_thrd_balance_strs[];
+extern char *cfg_supervisor_mode_strs[];
+extern char *cfg_tristate_strs[];
+
 int usrcfg_init(void);
 int usrcfg_deinit(void);
 int usrcfg_apply(void);

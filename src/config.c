@@ -8,19 +8,19 @@
 
 #define STR_LEAVE_AS_IS                 "leave_as-is"
 
-static char *proc_identity_type_strs[] = {
+char *cfg_identity_type_strs[] = {
         [IDENTITY_NONE]                 = "none",
         [IDENTITY_PROCESS_EXE]          = "process",
         [IDENTITY_FILE_HANDLE]          = "file_handle",
         [IDENTITY_CMDLINE]              = "cmdline",
 };
 
-static char *proc_identity_filter_strs[] = {
+char *cfg_identity_filter_strs[] = {
         [STR_FILTER_IS]                 = "is",
         [STR_FILTER_CONTAIN]            = "contains",
 };
 
-static char *prio_cls_strs[] = {
+char *cfg_prio_cls_strs[] = {
         [PROC_PRIO_CLS_UNCHANGED]       = STR_LEAVE_AS_IS,
         [PROC_PRIO_CLS_IDLE]            = "idle",
         [PROC_PRIO_CLS_NORMAL]          = "normal",
@@ -30,7 +30,7 @@ static char *prio_cls_strs[] = {
         [PROC_PRIO_CLS_ABOVE_NORMAL]    = "normal+",
 };
 
-static char *prio_lvl_strs[] = {
+char *cfg_prio_lvl_strs[] = {
         [THRD_PRIO_LVL_UNCHANGED]       = STR_LEAVE_AS_IS,
         [THRD_PRIO_LVL_IDLE]            = "idle",
         [THRD_PRIO_LVL_LOWEST]          = "lowest",
@@ -41,7 +41,7 @@ static char *prio_lvl_strs[] = {
         [THRD_PRIO_LVL_TIME_CRITICAL]   = "time_critical",
 };
 
-static char *page_prio_strs[] = {
+char *cfg_page_prio_strs[] = {
         [PAGE_PRIO_UNCHANGED]           = STR_LEAVE_AS_IS,
         [PAGE_PRIO_NORMAL]              = "normal",
         [PAGE_PRIO_BELOW_NORMAL]        = "normal-",
@@ -51,7 +51,7 @@ static char *page_prio_strs[] = {
         [PAGE_PRIO_LOWEST]              = "lowest",
 };
 
-static char *io_prio_strs[] = {
+char *cfg_io_prio_strs[] = {
         [IO_PRIO_UNCHANGED]             = STR_LEAVE_AS_IS,
         [IO_PRIO_VERY_LOW]              = "very_low",
         [IO_PRIO_LOW]                   = "low",
@@ -59,26 +59,26 @@ static char *io_prio_strs[] = {
         [IO_PRIO_HIGH]                  = "high",
 };
 
-static char *proc_balance_strs[] = {
+char *cfg_proc_balance_strs[] = {
         [PROC_BALANCE_BY_MAP]           = "by_map",
         [PROC_BALANCE_RAND]             = "node_random",
         [PROC_BALANCE_RR]               = "node_rr",
         [PROC_BALANCE_ONLOAD]           = "onload",
 };
 
-static char *thrd_balance_strs[] = {
+char *cfg_thrd_balance_strs[] = {
         [THRD_BALANCE_NODE_RAND]        = "node_random",
         [THRD_BALANCE_NODE_RR]          = "node_rr",
         [THRD_BALANCE_CPU_RR]           = "cpu_rr",
         [THRD_BALANCE_ONLOAD]           = "onload",
 };
 
-static char *supervisor_mode_strs[] = {
+char *cfg_supervisor_mode_strs[] = {
         [SUPERVISOR_PROCESSES]          = "processes",
         [SUPERVISOR_THREADS]            = "threads",
 };
 
-static char *tristate_strs[] = {
+char *cfg_tristate_strs[] = {
         [LEAVE_AS_IS]                   = STR_LEAVE_AS_IS,
         [STRVAL_ENABLED]                = "enabled",
         [STRVAL_DISABLED]               = "disabled",
@@ -142,8 +142,8 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                                 jbuf_offset_obj_open(b, id_obj, NULL, 0);
 
-                                jbuf_offset_strval_add(b, "type", offsetof(struct proc_identity, type), proc_identity_type_strs, NUM_PROC_ID_TYPES);
-                                jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), proc_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
+                                jbuf_offset_strval_add(b, "type", offsetof(struct proc_identity, type), cfg_identity_type_strs, NUM_PROC_ID_TYPES);
+                                jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
                                 jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
 
                                 {
@@ -151,7 +151,7 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                                         jbuf_offset_objptr_open(b, cmdl_obj, "cmdline", sizeof(struct proc_identity), offsetof(struct proc_identity, cmdl));
 
-                                        jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), proc_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
+                                        jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
                                         jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
 
                                         jbuf_obj_close(b, cmdl_obj);
@@ -162,7 +162,7 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                                         jbuf_offset_objptr_open(b, hdl_obj, "file_handle", sizeof(struct proc_identity), offsetof(struct proc_identity, file_hdl));
 
-                                        jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), proc_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
+                                        jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
                                         jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
 
                                         jbuf_obj_close(b, hdl_obj);
@@ -179,10 +179,10 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                         jbuf_offset_obj_open(b, process_cfg, "process", offsetof(profile_t, proc_cfg));
 
-                        jbuf_offset_strval_add(b, "prio_class", offsetof(struct proc_cfg, prio_class), prio_cls_strs, NUM_PROC_PRIO_CLASS);
-                        jbuf_offset_strval_add(b, "prio_boost", offsetof(struct proc_cfg, prio_boost), tristate_strs, NUM_TRISTATE_VALS);
-                        jbuf_offset_strval_add(b, "io_prio", offsetof(struct proc_cfg, io_prio), io_prio_strs, NUM_IO_PRIOS);
-                        jbuf_offset_strval_add(b, "page_prio", offsetof(struct proc_cfg, page_prio), page_prio_strs, NUM_PAGE_PRIOS);
+                        jbuf_offset_strval_add(b, "prio_class", offsetof(struct proc_cfg, prio_class), cfg_prio_cls_strs, NUM_PROC_PRIO_CLASS);
+                        jbuf_offset_strval_add(b, "prio_boost", offsetof(struct proc_cfg, prio_boost), cfg_tristate_strs, NUM_TRISTATE_VALS);
+                        jbuf_offset_strval_add(b, "io_prio", offsetof(struct proc_cfg, io_prio), cfg_io_prio_strs, NUM_IO_PRIOS);
+                        jbuf_offset_strval_add(b, "page_prio", offsetof(struct proc_cfg, page_prio), cfg_page_prio_strs, NUM_PAGE_PRIOS);
 
                         jbuf_obj_close(b, process_cfg);
                 }
@@ -198,14 +198,14 @@ int usrcfg_root_key_create(jbuf_t *b)
                                 jbuf_offset_obj_open(b, prio_level_obj, "prio_level", 0);
 
                                 jbuf_offset_add(b, bool, "at_least", offsetof(struct thrd_cfg, prio_level_least));
-                                jbuf_offset_strval_add(b, "level", offsetof(struct thrd_cfg, prio_level), prio_lvl_strs, NUM_THRD_PRIO_LEVELS);
+                                jbuf_offset_strval_add(b, "level", offsetof(struct thrd_cfg, prio_level), cfg_prio_lvl_strs, NUM_THRD_PRIO_LEVELS);
 
                                 jbuf_obj_close(b, prio_level_obj);
                         }
 
-                        jbuf_offset_strval_add(b, "io_prio", offsetof(struct thrd_cfg, io_prio), io_prio_strs, NUM_IO_PRIOS);
-                        jbuf_offset_strval_add(b, "page_prio", offsetof(struct thrd_cfg, page_prio), page_prio_strs, NUM_PAGE_PRIOS);
-                        jbuf_offset_strval_add(b, "prio_boost", offsetof(struct thrd_cfg, prio_boost), tristate_strs, NUM_TRISTATE_VALS);
+                        jbuf_offset_strval_add(b, "io_prio", offsetof(struct thrd_cfg, io_prio), cfg_io_prio_strs, NUM_IO_PRIOS);
+                        jbuf_offset_strval_add(b, "page_prio", offsetof(struct thrd_cfg, page_prio), cfg_page_prio_strs, NUM_PAGE_PRIOS);
+                        jbuf_offset_strval_add(b, "prio_boost", offsetof(struct thrd_cfg, prio_boost), cfg_tristate_strs, NUM_TRISTATE_VALS);
 
                         jbuf_obj_close(b, thread_cfg);
                 }
@@ -215,7 +215,7 @@ int usrcfg_root_key_create(jbuf_t *b)
 
                         jbuf_offset_obj_open(b, supervisor_obj, "supervisor", 0);
 
-                        jbuf_offset_strval_add(b, "mode", offsetof(profile_t, sched_mode), supervisor_mode_strs, NUM_SUPERVISOR_GRANS);
+                        jbuf_offset_strval_add(b, "mode", offsetof(profile_t, sched_mode), cfg_supervisor_mode_strs, NUM_SUPERVISOR_GRANS);
                         jbuf_offset_add(b, bool, "oneshot", offsetof(profile_t, oneshot));
                         jbuf_offset_add(b, bool, "always_set", offsetof(profile_t, always_set));
 
@@ -225,7 +225,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                                 jbuf_offset_obj_open(b, processes_obj, "processes", offsetof(profile_t, processes));
 
                                 jbuf_offset_add(b, hex_u32, "node_map", offsetof(struct supervisor_cfg, node_map));
-                                jbuf_offset_strval_add(b, "balance", offsetof(struct supervisor_cfg, balance), proc_balance_strs, NUM_PROC_BALANCE);
+                                jbuf_offset_strval_add(b, "balance", offsetof(struct supervisor_cfg, balance), cfg_proc_balance_strs, NUM_PROC_BALANCE);
                                 jbuf_offset_add(b, hex_u64, "affinity", offsetof(struct supervisor_cfg, affinity));
 
                                 jbuf_obj_close(b, processes_obj);
@@ -237,7 +237,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                                 jbuf_offset_obj_open(b, threads_obj, "threads", offsetof(profile_t, threads));
 
                                 jbuf_offset_add(b, hex_u32, "node_map", offsetof(struct supervisor_cfg, node_map));
-                                jbuf_offset_strval_add(b, "balance", offsetof(struct supervisor_cfg, balance), thrd_balance_strs, NUM_THRD_BALANCE);
+                                jbuf_offset_strval_add(b, "balance", offsetof(struct supervisor_cfg, balance), cfg_thrd_balance_strs, NUM_THRD_BALANCE);
                                 jbuf_offset_add(b, hex_u64, "affinity", offsetof(struct supervisor_cfg, affinity));
 
                                 jbuf_obj_close(b, threads_obj);
