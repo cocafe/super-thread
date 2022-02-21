@@ -16,6 +16,7 @@ struct cpu_grp_info {
 
 struct sys_info {
         uint32_t nr_cpu_grp;
+        uint32_t nr_numa_node;
         struct cpu_grp_info *cpu_grp;
 };
 

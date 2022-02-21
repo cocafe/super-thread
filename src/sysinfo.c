@@ -24,19 +24,20 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
 
         switch (pslpi->Relationship) {
         case RelationProcessorPackage: {
-                WORD GroupCount = u.Processor->GroupCount;
-                PGROUP_AFFINITY GroupMask = u.Processor->GroupMask;
+                // FIXME: behavior changed on Windows 11 ?
+//                WORD GroupCount = u.Processor->GroupCount;
+//                PGROUP_AFFINITY GroupMask = u.Processor->GroupMask;
 
-                if (GroupCount > 1) {
-                        pr_err("unexpected: GroupCount %hu > 1\n", GroupCount);
-                        return -EINVAL;
-                }
+//                if (GroupCount > 1) {
+//                        pr_err("unexpected: GroupCount %hu > 1\n", GroupCount);
+//                        return -EINVAL;
+//                }
 
 //                do {
 //                        pr_info("group<%u> Mask = %016llx\n", GroupMask->Group, GroupMask->Mask);
 //                } while (GroupMask++, --GroupCount);
 
-                sysinfo->cpu_grp[++curr_grp].grp_mask = GroupMask->Mask;
+//                sysinfo->cpu_grp[++curr_grp].grp_mask = GroupMask->Mask;
                 break;
         }
 
@@ -74,6 +75,66 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
         return 0;
 }
 
+void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
+{
+        union {
+                PPROCESSOR_RELATIONSHIP Processor;
+                PNUMA_NODE_RELATIONSHIP NumaNode;
+                PCACHE_RELATIONSHIP Cache;
+                PGROUP_RELATIONSHIP Group;
+        } u;
+
+        u.Processor = &pslpi->Processor;
+
+        switch (pslpi->Relationship) {
+        case RelationProcessorPackage:
+                pr_info("RelationProcessorPackage(GroupCount = %u)\n", u.Processor->GroupCount);
+
+                WORD GroupCount;
+                if ((GroupCount = u.Processor->GroupCount))
+                {
+                        PGROUP_AFFINITY GroupMask = u.Processor->GroupMask;
+                        do
+                        {
+                                pr_info("group<%u> Mask = %016llx\n", GroupMask->Group, GroupMask->Mask);
+                        } while (GroupMask++, --GroupCount);
+                }
+                break;
+
+        case RelationProcessorCore:
+                pr_info("RelationProcessorCore(%x): Mask = %016llx\n", u.Processor->Flags, u.Processor->GroupMask->Mask);
+                break;
+
+        case RelationGroup:
+                pr_info("RelationGroup(%u/%u)\n", u.Group->ActiveGroupCount, u.Group->MaximumGroupCount);
+
+                WORD ActiveGroupCount;
+                if ((ActiveGroupCount = u.Group->ActiveGroupCount))
+                {
+                        PPROCESSOR_GROUP_INFO GroupInfo = u.Group->GroupInfo;
+                        do
+                        {
+                                pr_info("<%d/%d %016llx>\n",
+                                        GroupInfo->ActiveProcessorCount,
+                                        GroupInfo->MaximumProcessorCount,
+                                        GroupInfo->ActiveProcessorMask);
+                        } while (GroupInfo++, --ActiveGroupCount);
+                }
+                break;
+
+        case RelationCache:
+                pr_info("Cache L%d (%x, %lx) %x\n", u.Cache->Level, u.Cache->LineSize, u.Cache->CacheSize, u.Cache->Type);
+                break;
+
+        case RelationNumaNode:
+                pr_info("NumaNode<%lu> (group = %d, mask = %016llx)\n", u.NumaNode->NodeNumber, u.NumaNode->GroupMask.Group, u.NumaNode->GroupMask.Mask);
+                break;
+
+        default:
+                pr_info("unknown Relationship=%x\n", pslpi->Relationship);
+        }
+}
+
 int cpu_topology_dump(sys_info_t *sysinfo)
 {
         DWORD sz = 0, info_sz;
@@ -105,6 +166,8 @@ int cpu_topology_dump(sys_info_t *sysinfo)
                 if ((err = cpu_topology_info_process(sysinfo, buf)))
                         goto out;
 
+//                DumpLPI(buf);
+
                 info_sz = ((SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *) buf)->Size;
                 buf = (uint8_t *)buf + info_sz;
         } while (sz -= info_sz);
@@ -117,6 +180,7 @@ out:
 int sysinfo_init(sys_info_t *info)
 {
         unsigned nr_grp = GetActiveProcessorGroupCount();
+        ULONG nr_numa = 0;
         int err = 0;
 
         if (nr_grp == 0) {
@@ -126,6 +190,13 @@ int sysinfo_init(sys_info_t *info)
 
         if (nr_grp < 2)
                 pr_notice("active processor group count %u < 2\n", nr_grp);
+
+        if (0 == GetNumaHighestNodeNumber(&nr_numa)) {
+                pr_err("GetNumaHighestNodeNumber() failed\n");
+                return -EFAULT;
+        }
+
+        info->nr_numa_node = nr_numa;
 
         info->nr_cpu_grp = nr_grp;
         info->cpu_grp = calloc(nr_grp, sizeof(struct cpu_grp_info));
@@ -140,6 +211,7 @@ int sysinfo_init(sys_info_t *info)
 
                 grp_info->cpu_cnt = cpu_cnt;
                 grp_info->cpu_mask = calloc(cpu_cnt, sizeof(struct cpu_mask));
+                grp_info->grp_mask = GENMASK_ULL(cpu_cnt - 1, 0);
                 if (!grp_info->cpu_mask)
                         return -ENOMEM;
 
