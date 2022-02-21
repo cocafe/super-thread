@@ -360,4 +360,35 @@ PhGetThreadIsTerminated(
         return status;
 }
 
+FORCEINLINE
+NTSTATUS
+PhGetThreadIoPriority(
+        _In_ HANDLE ThreadHandle,
+        _Out_ IO_PRIORITY_HINT *IoPriority
+                     )
+{
+        return NtQueryInformationThread(
+                ThreadHandle,
+                (THREADINFOCLASS)PhThreadIoPriority,
+                IoPriority,
+                sizeof(IO_PRIORITY_HINT),
+                NULL
+                                       );
+}
+
+FORCEINLINE
+NTSTATUS
+PhSetThreadIoPriority(
+        _In_ HANDLE ThreadHandle,
+        _In_ IO_PRIORITY_HINT IoPriority
+                     )
+{
+        return NtSetInformationThread(
+                ThreadHandle,
+                (THREADINFOCLASS)PhThreadIoPriority,
+                &IoPriority,
+                sizeof(IO_PRIORITY_HINT)
+                                     );
+}
+
 #endif //SUPER_THREAD_MYNTAPI_H
