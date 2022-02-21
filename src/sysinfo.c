@@ -18,7 +18,10 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
                 PCACHE_RELATIONSHIP Cache;
                 PGROUP_RELATIONSHIP Group;
         } u;
-        static int32_t curr_grp = -1;
+
+        static int32_t curr_grp = 0;
+
+        size_t grp_nr_cpu = find_first_zero_bit_u64(&sysinfo->cpu_grp[curr_grp].grp_mask) - 1;
 
         u.Processor = &pslpi->Processor;
 
@@ -37,7 +40,7 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
 //                        pr_info("group<%u> Mask = %016llx\n", GroupMask->Group, GroupMask->Mask);
 //                } while (GroupMask++, --GroupCount);
 
-//                sysinfo->cpu_grp[++curr_grp].grp_mask = GroupMask->Mask;
+//                sysinfo->cpu_grp[curr_grp++].grp_mask = GroupMask->Mask;
                 break;
         }
 
@@ -51,6 +54,7 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
 
                         curr_cpu = find_first_bit_u64(&t);
 
+                        // if relation_mask is all ZERO
                         if (curr_cpu == 64)
                                 break;
 
@@ -58,6 +62,10 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
                         m->relation_mask = relation_mask;
 
                         t &= ~BIT_ULL(curr_cpu);
+
+                        // workaround to iterate cpu groups
+                        if (curr_cpu == grp_nr_cpu)
+                                curr_grp++;
                 } while (1);
 
                 break;
