@@ -315,10 +315,6 @@ static void profile_##name##_click(struct tray_menu *m)         \
                 *val = 0;                                       \
 }
 
-PROFILE_BOOL_SWITCH(enabled,    uint32_t, offsetof(profile_t, enabled));
-PROFILE_BOOL_SWITCH(oneshot,    uint32_t, offsetof(profile_t, oneshot));
-PROFILE_BOOL_SWITCH(always_set, uint32_t, offsetof(profile_t, always_set));
-
 #define PROFILE_VALUE_SWITCH(name, type, offset)                \
 static void profile_##name##_update(struct tray_menu *m)        \
 {                                                               \
@@ -340,11 +336,23 @@ static void profile_##name##_click(struct tray_menu *m)         \
         *target = value;                                        \
 }
 
+PROFILE_BOOL_SWITCH(enabled,    uint32_t, offsetof(profile_t, enabled));
+PROFILE_BOOL_SWITCH(oneshot,    uint32_t, offsetof(profile_t, oneshot));
+PROFILE_BOOL_SWITCH(always_set, uint32_t, offsetof(profile_t, always_set));
+
 PROFILE_VALUE_SWITCH(sched_mode,          uint32_t, offsetof(profile_t, sched_mode));
+
 PROFILE_VALUE_SWITCH(proc_cfg_prio_class, uint32_t, offsetof(profile_t, proc_cfg.prio_class));
 PROFILE_VALUE_SWITCH(proc_cfg_prio_boost, uint32_t, offsetof(profile_t, proc_cfg.prio_boost));
 PROFILE_VALUE_SWITCH(proc_cfg_io_prio,    uint32_t, offsetof(profile_t, proc_cfg.io_prio));
 PROFILE_VALUE_SWITCH(proc_cfg_page_prio,  uint32_t, offsetof(profile_t, proc_cfg.page_prio));
+
+PROFILE_BOOL_SWITCH(thrd_cfg_prio_least,  uint32_t, offsetof(profile_t, thrd_cfg.prio_level_least));
+
+PROFILE_VALUE_SWITCH(thrd_cfg_prio_level, uint32_t, offsetof(profile_t, thrd_cfg.prio_level));
+PROFILE_VALUE_SWITCH(thrd_cfg_prio_boost, uint32_t, offsetof(profile_t, thrd_cfg.prio_boost));
+PROFILE_VALUE_SWITCH(thrd_cfg_io_prio,    uint32_t, offsetof(profile_t, thrd_cfg.io_prio));
+PROFILE_VALUE_SWITCH(thrd_cfg_page_prio,  uint32_t, offsetof(profile_t, thrd_cfg.page_prio));
 
 static void profile_sub_menu_update(struct tray_menu *m) {
         for (struct tray_menu *sub = m->submenu; sub; sub++) {
@@ -356,12 +364,13 @@ static void profile_sub_menu_update(struct tray_menu *m) {
         }
 }
 
-static void profile_proc_info_dump(struct tray_menu *m)
+static void profile_proc_thread_dump(struct tray_menu *m)
 {
         profile_t *profile = m->userdata;
 
-        // XXX: need lock
+        // FIXME: not thread-safe, need lock
 
+        profile_proc_thread_info_dump(&g_sv.proc_selected, profile);
 }
 
 static struct tray_menu profile_menu_template[] = {
@@ -415,7 +424,7 @@ static struct tray_menu profile_menu_template[] = {
                                                 .on_click = profile_proc_cfg_prio_boost_click,
                                                 .userdata2 = (void *)STRVAL_DISABLED,
                                         },
-                                        { .is_end = 1 },
+                                        {.is_end = 1},
                                 },
                         },
                         {
@@ -467,7 +476,7 @@ static struct tray_menu profile_menu_template[] = {
                                                 .on_click = profile_proc_cfg_prio_class_click,
                                                 .userdata2 = (void *)PROC_PRIO_CLS_REALTIME,
                                         },
-                                        { .is_end = 1 },
+                                        {.is_end = 1},
                                 },
                         },
                         {
@@ -507,7 +516,7 @@ static struct tray_menu profile_menu_template[] = {
                                                 .on_click = profile_proc_cfg_io_prio_click,
                                                 .userdata2 = (void *)IO_PRIO_HIGH,
                                         },
-                                        { .is_end = 1 },
+                                        {.is_end = 1},
                                 },
                         },
                         {
@@ -564,12 +573,202 @@ static struct tray_menu profile_menu_template[] = {
                         },
                         { .is_end = 1 },
                 },
-        },
+        }, // "Process"
+        {
+                .name = L"Thread",
+                .pre_show = profile_sub_menu_update,
+                .submenu = (struct tray_menu[]) {
+                        {
+                                .name = L"Priority Boost",
+                                .pre_show = profile_sub_menu_update,
+                                .submenu = (struct tray_menu[]) {
+                                        {
+                                                .name = L"Leave as-is",
+                                                .pre_show = profile_thrd_cfg_prio_boost_update,
+                                                .on_click = profile_thrd_cfg_prio_boost_click,
+                                                .userdata2 = (void *)LEAVE_AS_IS,
+                                        },
+                                        {
+                                                .is_separator = 1
+                                        },
+                                        {
+                                                .name = L"Enabled",
+                                                .pre_show = profile_thrd_cfg_prio_boost_update,
+                                                .on_click = profile_thrd_cfg_prio_boost_click,
+                                                .userdata2 = (void *)STRVAL_ENABLED,
+                                        },
+                                        {
+                                                .name = L"Disabled",
+                                                .pre_show = profile_thrd_cfg_prio_boost_update,
+                                                .on_click = profile_thrd_cfg_prio_boost_click,
+                                                .userdata2 = (void *)STRVAL_DISABLED,
+                                        },
+                                        {.is_end = 1},
+                                },
+                        },
+                        {
+                                .name = L"Priority Level",
+                                .pre_show = profile_sub_menu_update,
+                                .submenu = (struct tray_menu[]) {
+                                        {
+                                                .name = L"Leave as-is",
+                                                .pre_show = profile_thrd_cfg_prio_level_update,
+                                                .on_click = profile_thrd_cfg_prio_level_click,
+                                                .userdata2 = (void *)THRD_PRIO_LVL_UNCHANGED,
+                                        },
+                                        {
+                                                .name = L"At-least",
+                                                .pre_show = profile_thrd_cfg_prio_least_update,
+                                                .on_click = profile_thrd_cfg_prio_least_click,
+                                        },
+                                        {
+                                                .is_separator = 1
+                                        },
+                                        {
+                                                .name = L"Idle",
+                                                .pre_show = profile_thrd_cfg_prio_level_update,
+                                                .on_click = profile_thrd_cfg_prio_level_click,
+                                                .userdata2 = (void *)THRD_PRIO_LVL_IDLE,
+                                        },
+                                        {
+                                                .name = L"Lowest",
+                                                .pre_show = profile_thrd_cfg_prio_level_update,
+                                                .on_click = profile_thrd_cfg_prio_level_click,
+                                                .userdata2 = (void *)THRD_PRIO_LVL_LOWEST,
+                                        },
+                                        {
+                                                .name = L"Normal -",
+                                                .pre_show = profile_thrd_cfg_prio_level_update,
+                                                .on_click = profile_thrd_cfg_prio_level_click,
+                                                .userdata2 = (void *)THRD_PRIO_LVL_BELOW_NORMAL,
+                                        },
+                                        {
+                                                .name = L"Normal",
+                                                .pre_show = profile_thrd_cfg_prio_level_update,
+                                                .on_click = profile_thrd_cfg_prio_level_click,
+                                                .userdata2 = (void *)THRD_PRIO_LVL_NORMAL,
+                                        },
+                                        {
+                                                .name = L"Normal +",
+                                                .pre_show = profile_thrd_cfg_prio_level_update,
+                                                .on_click = profile_thrd_cfg_prio_level_click,
+                                                .userdata2 = (void *)THRD_PRIO_LVL_ABOVE_NORMAL,
+                                        },
+                                        {
+                                                .name = L"Highest",
+                                                .pre_show = profile_thrd_cfg_prio_level_update,
+                                                .on_click = profile_thrd_cfg_prio_level_click,
+                                                .userdata2 = (void *)THRD_PRIO_LVL_HIGHEST,
+                                        },
+                                        {
+                                                .name = L"Time Critical",
+                                                .pre_show = profile_thrd_cfg_prio_level_update,
+                                                .on_click = profile_thrd_cfg_prio_level_click,
+                                                .userdata2 = (void *)THRD_PRIO_LVL_TIME_CRITICAL,
+                                        },
+                                        {.is_end = 1},
+                                },
+                        },
+                        {
+                                .name = L"IO Priority",
+                                .pre_show = profile_sub_menu_update,
+                                .submenu = (struct tray_menu[]) {
+                                        {
+                                                .name = L"Leave as-is",
+                                                .pre_show = profile_thrd_cfg_io_prio_update,
+                                                .on_click = profile_thrd_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_UNCHANGED,
+                                        },
+                                        {
+                                                .is_separator = 1
+                                        },
+                                        {
+                                                .name = L"Very Low",
+                                                .pre_show = profile_thrd_cfg_io_prio_update,
+                                                .on_click = profile_thrd_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_VERY_LOW,
+                                        },
+                                        {
+                                                .name = L"Low",
+                                                .pre_show = profile_thrd_cfg_io_prio_update,
+                                                .on_click = profile_thrd_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_LOW,
+                                        },
+                                        {
+                                                .name = L"Normal",
+                                                .pre_show = profile_thrd_cfg_io_prio_update,
+                                                .on_click = profile_thrd_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_NORMAL,
+                                        },
+                                        {
+                                                .name = L"High",
+                                                .pre_show = profile_thrd_cfg_io_prio_update,
+                                                .on_click = profile_thrd_cfg_io_prio_click,
+                                                .userdata2 = (void *)IO_PRIO_HIGH,
+                                        },
+                                        {.is_end = 1},
+                                },
+                        },
+                        {
+                                .name = L"Page Priority",
+                                .pre_show = profile_sub_menu_update,
+                                .submenu = (struct tray_menu[]) {
+                                        {
+                                                .name = L"Leave as-is",
+                                                .pre_show = profile_thrd_cfg_page_prio_update,
+                                                .on_click = profile_thrd_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_UNCHANGED,
+                                        },
+                                        {
+                                                .is_separator = 1
+                                        },
+                                        {
+                                                .name = L"Lowest",
+                                                .pre_show = profile_thrd_cfg_page_prio_update,
+                                                .on_click = profile_thrd_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_LOWEST,
+                                        },
+                                        {
+                                                .name = L"Very Low",
+                                                .pre_show = profile_thrd_cfg_page_prio_update,
+                                                .on_click = profile_thrd_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_VERY_LOW,
+                                        },
+                                        {
+                                                .name = L"Low",
+                                                .pre_show = profile_thrd_cfg_page_prio_update,
+                                                .on_click = profile_thrd_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_LOW,
+                                        },
+                                        {
+                                                .name = L"Medium",
+                                                .pre_show = profile_thrd_cfg_page_prio_update,
+                                                .on_click = profile_thrd_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_MEDIUM,
+                                        },
+                                        {
+                                                .name = L"Normal-",
+                                                .pre_show = profile_thrd_cfg_page_prio_update,
+                                                .on_click = profile_thrd_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_BELOW_NORMAL,
+                                        },
+                                        {
+                                                .name = L"Normal",
+                                                .pre_show = profile_thrd_cfg_page_prio_update,
+                                                .on_click = profile_thrd_cfg_page_prio_click,
+                                                .userdata2 = (void *)PAGE_PRIO_NORMAL,
+                                        },
+                                        { .is_end = 1 },
+                                },
+                        },
+                        { .is_end = 1 },
+                },
+        }, // "Thread"
         { .is_separator = 1 },
         { .name = L"Oneshot", .pre_show = profile_oneshot_update, .on_click = profile_oneshot_click },
         { .name = L"Always Set", .pre_show = profile_always_set_update, .on_click = profile_always_set_click },
         { .is_separator = 1 },
-        { .name = L"Info Dump", .on_click = profile_proc_info_dump, },
+        { .name = L"Thread Dump", .on_click = profile_proc_thread_dump, },
         { .is_end = 1 },
 };
 
