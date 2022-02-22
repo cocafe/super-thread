@@ -1817,18 +1817,19 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         if (image_path_extract_file_name(proc->info.pid, exe_name, _MAX_FNAME))
                 goto out;
 
-        if ((err = proc_info_update(info, process))) {
-                pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
-                goto out;
-        }
-
         if (!proc->is_new && !is_wstr_equal(info->name, exe_name)) {
+                pr_info("this is rare, process name \"%s\" \"%s\" mismatched!\n", info->name, exe_name);
                 err = -EINVAL;
                 goto out;
         }
 
         if (profile->oneshot && proc->oneshot)
                 goto out;
+
+        if ((err = proc_info_update(info, process))) {
+                pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
+                goto out;
+        }
 
         if ((err = process_config_apply(profile, process)))
                 goto out;
