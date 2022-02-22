@@ -370,7 +370,7 @@ static void profile_proc_thread_dump(struct tray_menu *m)
 
         // FIXME: not thread-safe, need lock
 
-        profile_proc_thread_info_dump(&g_sv.proc_selected, profile);
+        profile_processes_info_dump(&g_sv.proc_selected, profile);
 }
 
 static struct tray_menu profile_menu_template[] = {
@@ -768,7 +768,7 @@ static struct tray_menu profile_menu_template[] = {
         { .name = L"Oneshot", .pre_show = profile_oneshot_update, .on_click = profile_oneshot_click },
         { .name = L"Always Set", .pre_show = profile_always_set_update, .on_click = profile_always_set_click },
         { .is_separator = 1 },
-        { .name = L"Thread Dump", .on_click = profile_proc_thread_dump, },
+        { .name = L"Info Dump", .on_click = profile_proc_thread_dump, },
         { .is_end = 1 },
 };
 

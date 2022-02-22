@@ -101,6 +101,6 @@ int supervisor_deinit(supervisor_t *sv);
 int supervisor_run(supervisor_t *sv);
 void supervisor_trigger_once(supervisor_t *sv);
 
-void profile_proc_thread_info_dump(tommy_hashtable *tbl, profile_t *profile);
+void profile_processes_info_dump(tommy_hashtable *tbl, profile_t *profile);
 
 #endif //SUPER_THREAD_SUPERVISOR_H

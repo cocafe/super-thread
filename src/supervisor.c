@@ -98,6 +98,36 @@ static const char *page_prio_strs[] = {
         [MEMORY_PRIORITY_NORMAL]        = "normal",
 };
 
+static int thread_prio_level_conv(int nt_value)
+{
+        switch (nt_value) {
+        case THREAD_PRIORITY_IDLE:
+                return THRD_PRIO_LVL_IDLE;
+
+        case THREAD_PRIORITY_LOWEST:
+                return THRD_PRIO_LVL_LOWEST;
+
+        case THREAD_PRIORITY_BELOW_NORMAL:
+                return THRD_PRIO_LVL_BELOW_NORMAL;
+
+        case THREAD_PRIORITY_NORMAL:
+                return THRD_PRIO_LVL_NORMAL;
+
+        case THREAD_PRIORITY_HIGHEST:
+                return THRD_PRIO_LVL_HIGHEST;
+
+        case THREAD_PRIORITY_ABOVE_NORMAL:
+                return THRD_PRIO_LVL_ABOVE_NORMAL;
+
+        case THREAD_PRIORITY_TIME_CRITICAL:
+                return THRD_PRIO_LVL_TIME_CRITICAL;
+
+        case THREAD_PRIORITY_ERROR_RETURN:
+        default:
+                return -1;
+        }
+}
+
 /**
  * https://docs.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities
  *
@@ -1108,54 +1138,87 @@ out:
         return err;
 }
 
+void proc_info_msg(int header)
+{
+        if (header) {
+                pr_raw("+------------+-------+--------------------+------------------------------------+----------+---------------------------+\n");
+                pr_raw("| profile    | pid   | name               | priority info                      | threaded | node | affinity mask      |\n");
+                pr_raw("|            |       |                    |---------+---------+--------+-------|          |      |                    |\n");
+                pr_raw("|            |       |                    | class   | page    | io     | boost |          |      |                    |\n");
+                pr_raw("+------------+-------+--------------------+---------+---------+--------+-------+----------+------+--------------------+\n");
+
+                return;
+        }
+
+        pr_raw("+------------+-------+--------------------+---------+---------+--------+-------+----------+------+--------------------+\n");
+}
+
+void proc_entry_print(proc_entry_t *entry, int ignore_oneshot)
+{
+        proc_info_t *info        = &entry->info;
+        profile_t *profile       = &g_cfg.profiles[entry->profile_idx];
+        uint8_t page_prio        = info->page_prio;
+        uint8_t io_prio          = info->io_prio;
+        uint8_t prio_boost       = info->prio_boost;
+        uint8_t prio_class       = info->prio_class.PriorityClass;
+        wchar_t profile_name[11] = { 0 };
+        wchar_t name[18]         = { 0 };
+
+        wcsncpy(profile_name, profile->name, WCBUF_LEN(profile_name));
+        profile_name[WCBUF_LEN(profile_name) - 1] = L'\0';
+
+        wcsncpy(name, info->name, WCBUF_LEN(name));
+        name[WCBUF_LEN(name) - 1] = L'\0';
+
+        if (!ignore_oneshot && entry->oneshot) {
+                pr_raw("| %-10ls | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
+                       profile_name,
+                       info->pid,
+                       name,
+                       "---",
+                       "---",
+                       "---",
+                       0,
+                       0,
+                       0,
+                       0ULL);
+
+                return;
+        }
+
+        pr_raw("| %-10ls | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
+               profile_name,
+               info->pid,
+               name,
+               prio_class < MaxProcPrioClasses ? proc_prio_strs[prio_class] : "ERR",
+               page_prio > MEMORY_PRIORITY_NORMAL ? "ERR" : page_prio_strs[page_prio],
+               io_prio < MaxIoPriorityTypes ? io_prio_strs[io_prio] : "ERR",
+               prio_boost,
+               info->use_thread_affinity,
+               info->curr_aff.Group,
+               info->curr_aff.Mask);
+}
+
 void proc_hashit_iterate(tommy_hashtable *tbl)
 {
         if (tbl->count == 0)
                 return;
 
-        pr_raw("+------------+-------+--------------------+------------------------------------+----------+---------------------------+\n");
-        pr_raw("| profile    | pid   | name               | priority info                      | threaded | node | affinity mask      |\n");
-        pr_raw("|            |       |                    |---------+---------+--------+-------|          |      |                    |\n");
-        pr_raw("|            |       |                    | class   | page    | io     | boost |          |      |                    |\n");
-        pr_raw("+------------+-------+--------------------+---------+---------+--------+-------+----------+------+--------------------+\n");
+        proc_info_msg(1);
 
         for (size_t i = 0; i < tbl->bucket_max; i++) {
                 tommy_node *n = tbl->bucket[i];
 
                 while (n) {
                         proc_entry_t *entry      = n->data;
-                        proc_info_t *info        = &entry->info;
-                        profile_t *profile       = &g_cfg.profiles[entry->profile_idx];
-                        uint8_t page_prio        = info->page_prio;
-                        uint8_t io_prio          = info->io_prio;
-                        uint8_t prio_boost       = info->prio_boost;
-                        uint8_t prio_class       = info->prio_class.PriorityClass;
-                        wchar_t profile_name[11] = { 0 };
-                        wchar_t name[18]         = { 0 };
 
-                        wcsncpy(profile_name, profile->name, WCBUF_LEN(profile_name));
-                        profile_name[WCBUF_LEN(profile_name) - 1] = L'\0';
-
-                        wcsncpy(name, info->name, WCBUF_LEN(name));
-                        name[WCBUF_LEN(name) - 1] = L'\0';
-
-                        pr_raw("| %-10ls | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
-                               profile_name,
-                               info->pid,
-                               name,
-                               prio_class < MaxProcPrioClasses ? proc_prio_strs[prio_class] : "ERR",
-                               page_prio > MEMORY_PRIORITY_NORMAL ? "ERR" : page_prio_strs[page_prio],
-                               io_prio < MaxIoPriorityTypes ? io_prio_strs[io_prio] : "ERR",
-                               prio_boost,
-                               info->use_thread_affinity,
-                               info->curr_aff.Group,
-                               info->curr_aff.Mask);
+                        proc_entry_print(entry, 0);
 
                         n = n->next;
                 }
         }
 
-        pr_raw("+------------+-------+--------------------+---------+---------+--------+-------+----------+------+--------------------+\n");
+        proc_info_msg(0);
 }
 
 static int profile_proc_prio_class_set(profile_t *profile, HANDLE process)
@@ -1292,181 +1355,6 @@ out:
         CloseHandle(thread);
 
         return 0;
-}
-
-static int thread_prio_level_conv(int nt_value)
-{
-        switch (nt_value) {
-        case THREAD_PRIORITY_IDLE:
-                return THRD_PRIO_LVL_IDLE;
-
-        case THREAD_PRIORITY_LOWEST:
-                return THRD_PRIO_LVL_LOWEST;
-
-        case THREAD_PRIORITY_BELOW_NORMAL:
-                return THRD_PRIO_LVL_BELOW_NORMAL;
-
-        case THREAD_PRIORITY_NORMAL:
-                return THRD_PRIO_LVL_NORMAL;
-
-        case THREAD_PRIORITY_HIGHEST:
-                return THRD_PRIO_LVL_HIGHEST;
-
-        case THREAD_PRIORITY_ABOVE_NORMAL:
-                return THRD_PRIO_LVL_ABOVE_NORMAL;
-
-        case THREAD_PRIORITY_TIME_CRITICAL:
-                return THRD_PRIO_LVL_TIME_CRITICAL;
-
-        case THREAD_PRIORITY_ERROR_RETURN:
-        default:
-                return -1;
-        }
-}
-
-int thread_info_dump(DWORD tid, void *data)
-{
-        size_t _prio_class = (size_t)data;
-        size_t prio_class = proc_prio_cls_profile[_prio_class];
-        ULONG page_prio;
-        IO_PRIORITY_HINT io_prio;
-        int _prio_level, prio_level;
-        BOOL prio_boost;
-        GROUP_AFFINITY curr_aff = { 0 };
-
-        HANDLE thread = OpenThread(THREAD_SET_INFORMATION |
-                                   THREAD_QUERY_INFORMATION,
-                                   FALSE,
-                                   tid);
-
-        static char *prio_level_strs[] = {
-                [THRD_PRIO_LVL_UNCHANGED]       = "invalid",
-                [THRD_PRIO_LVL_IDLE]            = "idle",
-                [THRD_PRIO_LVL_LOWEST]          = "lowest",
-                [THRD_PRIO_LVL_BELOW_NORMAL]    = "normal-",
-                [THRD_PRIO_LVL_NORMAL]          = "normal",
-                [THRD_PRIO_LVL_ABOVE_NORMAL]    = "normal+",
-                [THRD_PRIO_LVL_HIGHEST]         = "highest",
-                [THRD_PRIO_LVL_TIME_CRITICAL]   = "timecrit",
-        };
-
-        if (0 == GetThreadPriorityBoost(thread, &prio_boost)) {
-                pr_err("GetThreadPriorityBoost() failed, err=%lu\n", GetLastError());
-                goto out;
-        }
-
-        prio_boost = !prio_boost;
-
-        _prio_level = GetThreadPriority(thread);
-        if (_prio_level == THREAD_PRIORITY_ERROR_RETURN) {
-                pr_err("GetThreadPriority() failed, err=%lu\n", GetLastError());
-                goto out;
-        }
-
-        if (!NT_SUCCESS(PhGetThreadIoPriority(thread, &io_prio))) {
-                pr_err("PhGetThreadIoPriority() failed\n");
-                goto out;
-        }
-
-        if (!NT_SUCCESS(PhGetThreadPagePriority(thread, &page_prio))) {
-                pr_err("PhGetThreadPagePriority() failed\n");
-                goto out;
-        }
-
-        if (0 == GetThreadGroupAffinity(thread, &curr_aff)) {
-                pr_err("GetThreadGroupAffinity() failed\n");
-                goto out;
-        }
-
-        if ((prio_level = thread_prio_level_conv(_prio_level)) == -1) {
-                pr_err("invalid priority level value: %d\n", _prio_level);
-                prio_level = THRD_PRIO_LVL_UNCHANGED;
-        }
-
-        if (io_prio > ARRAY_SIZE(io_prio_strs)) {
-                pr_err("invalid io priority value: %d\n", io_prio);
-                goto out;
-        }
-
-        if (page_prio > ARRAY_SIZE(page_prio_strs)) {
-                pr_err("invalid page priority value: %lu\n", page_prio);
-                goto out;
-        }
-
-        pr_rawlvl(INFO, "| %-5lu | %-8s | %-4d | %-7s | %-6s | %-5d | %-4d | 0x%016jx |\n",
-                  tid,
-                  prio_level_strs[prio_level],
-                  thread_base_priority[prio_class][prio_level],
-                  page_prio_strs[page_prio],
-                  io_prio_strs[io_prio],
-                  prio_boost,
-                  curr_aff.Group,
-                  curr_aff.Mask
-                  );
-
-out:
-        CloseHandle(thread);
-
-        return 0;
-}
-
-void process_thread_info_dump(size_t pid)
-{
-        PROCESS_PRIORITY_CLASS _prio_class __attribute__((aligned(4))) = { 0 };
-        size_t prio_class = 0;
-        HANDLE process = OpenProcess(PROCESS_ALL_ACCESS |
-                              PROCESS_QUERY_INFORMATION |
-                              PROCESS_QUERY_LIMITED_INFORMATION,
-                              FALSE,
-                              pid);
-
-        if (!process) {
-                pr_err("failed to open process\n");
-                return;
-        }
-
-        if (process_prio_cls_get(process, &_prio_class)) {
-                pr_err("process_prio_cls_get() failed\n");
-                goto out;
-        }
-
-        prio_class = _prio_class.PriorityClass;
-        if (prio_class >= MaxProcPrioClasses) {
-                pr_err("invalid priority class value: %zu\n", prio_class);
-                goto out;
-        }
-
-        pr_raw("+-------+--------------------------------------------+---------------------------+\n");
-        pr_raw("| tid   | priority info                              | node | affinity mask      |\n");
-        pr_raw("|       |----------+------+---------+--------+-------|      |                    |\n");
-        pr_raw("|       | level    | base | page    | io     | boost |      |                    |\n");
-        pr_raw("+-------+----------+------+---------+--------+-------+------+--------------------+\n");
-
-        process_threads_iterate(pid, thread_info_dump, (void *)prio_class);
-
-        pr_raw("+-------+----------+------+---------+--------+-------+------+--------------------+\n");
-
-out:
-        CloseHandle(process);
-}
-
-void profile_proc_thread_info_dump_cb(proc_entry_t *proc, va_list ap)
-{
-        profile_t *profile = va_arg(ap, profile_t *);
-        size_t pid = proc->info.pid;
-        wchar_t *proc_name = proc->info.name;
-
-        if (proc->profile != profile)
-                return;
-
-        pr_rawlvl(INFO, "\n\npid: %zu proc: \"%ls\"\n\n", pid, proc_name);
-
-        process_thread_info_dump(proc->info.pid);
-}
-
-void profile_proc_thread_info_dump(tommy_hashtable *tbl, profile_t *profile)
-{
-        proc_entry_for_each(tbl, profile_proc_thread_info_dump_cb, profile);
 }
 
 static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *proc,
@@ -1838,7 +1726,7 @@ static int supervisor_threads_sched(supervisor_t *sv, proc_entry_t *proc)
         return 0;
 }
 
-static int process_info_update(proc_info_t *info, HANDLE process)
+static int proc_info_update(proc_info_t *info, HANDLE process)
 {
         int err;
 
@@ -1929,7 +1817,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         if (image_path_extract_file_name(proc->info.pid, exe_name, _MAX_FNAME))
                 goto out;
 
-        if ((err = process_info_update(info, process))) {
+        if ((err = proc_info_update(info, process))) {
                 pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
                 goto out;
         }
@@ -1961,7 +1849,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         }
 
         // update again after applying settings
-        if ((err = process_info_update(info, process)))
+        if ((err = proc_info_update(info, process)))
                 pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
 
         proc->is_new = 0;
@@ -2218,4 +2106,151 @@ int supervisor_deinit(supervisor_t *sv)
         sem_destroy(&sv->sleeper);
 
         return 0;
+}
+
+int thread_info_dump(DWORD tid, void *data)
+{
+        size_t _prio_class = (size_t)data;
+        size_t prio_class = proc_prio_cls_profile[_prio_class];
+        ULONG page_prio;
+        IO_PRIORITY_HINT io_prio;
+        int _prio_level, prio_level;
+        BOOL prio_boost;
+        GROUP_AFFINITY curr_aff = { 0 };
+
+        HANDLE thread = OpenThread(THREAD_SET_INFORMATION |
+                                   THREAD_QUERY_INFORMATION,
+                                   FALSE,
+                                   tid);
+
+        static char *prio_level_strs[] = {
+                [THRD_PRIO_LVL_UNCHANGED]       = "invalid",
+                [THRD_PRIO_LVL_IDLE]            = "idle",
+                [THRD_PRIO_LVL_LOWEST]          = "lowest",
+                [THRD_PRIO_LVL_BELOW_NORMAL]    = "normal-",
+                [THRD_PRIO_LVL_NORMAL]          = "normal",
+                [THRD_PRIO_LVL_ABOVE_NORMAL]    = "normal+",
+                [THRD_PRIO_LVL_HIGHEST]         = "highest",
+                [THRD_PRIO_LVL_TIME_CRITICAL]   = "timecrit",
+        };
+
+        if (0 == GetThreadPriorityBoost(thread, &prio_boost)) {
+                pr_err("GetThreadPriorityBoost() failed, err=%lu\n", GetLastError());
+                goto out;
+        }
+
+        prio_boost = !prio_boost;
+
+        _prio_level = GetThreadPriority(thread);
+        if (_prio_level == THREAD_PRIORITY_ERROR_RETURN) {
+                pr_err("GetThreadPriority() failed, err=%lu\n", GetLastError());
+                goto out;
+        }
+
+        if (!NT_SUCCESS(PhGetThreadIoPriority(thread, &io_prio))) {
+                pr_err("PhGetThreadIoPriority() failed\n");
+                goto out;
+        }
+
+        if (!NT_SUCCESS(PhGetThreadPagePriority(thread, &page_prio))) {
+                pr_err("PhGetThreadPagePriority() failed\n");
+                goto out;
+        }
+
+        if (0 == GetThreadGroupAffinity(thread, &curr_aff)) {
+                pr_err("GetThreadGroupAffinity() failed\n");
+                goto out;
+        }
+
+        if ((prio_level = thread_prio_level_conv(_prio_level)) == -1) {
+                pr_err("invalid priority level value: %d\n", _prio_level);
+                prio_level = THRD_PRIO_LVL_UNCHANGED;
+        }
+
+        if (io_prio > ARRAY_SIZE(io_prio_strs)) {
+                pr_err("invalid io priority value: %d\n", io_prio);
+                goto out;
+        }
+
+        if (page_prio > ARRAY_SIZE(page_prio_strs)) {
+                pr_err("invalid page priority value: %lu\n", page_prio);
+                goto out;
+        }
+
+        pr_rawlvl(INFO, "| %-5lu | %-8s | %-4d | %-7s | %-6s | %-5d | %-4d | 0x%016jx |\n",
+                  tid,
+                  prio_level_strs[prio_level],
+                  thread_base_priority[prio_class][prio_level],
+                  page_prio_strs[page_prio],
+                  io_prio_strs[io_prio],
+                  prio_boost,
+                  curr_aff.Group,
+                  curr_aff.Mask
+                 );
+
+out:
+        CloseHandle(thread);
+
+        return 0;
+}
+
+void process_info_dump(proc_entry_t *proc)
+{
+        PROCESS_PRIORITY_CLASS _prio_class __attribute__((aligned(4))) = { 0 };
+        size_t pid = proc->info.pid;
+        size_t prio_class = 0;
+        HANDLE process = OpenProcess(PROCESS_ALL_ACCESS |
+                                     PROCESS_QUERY_INFORMATION |
+                                     PROCESS_QUERY_LIMITED_INFORMATION,
+                                     FALSE,
+                                     pid);
+
+        if (!process) {
+                pr_err("failed to open process\n");
+                return;
+        }
+
+        proc_info_msg(1);
+        proc_info_update(&proc->info, process);
+        proc_entry_print(proc, 1);
+        proc_info_msg(0);
+
+        if (process_prio_cls_get(process, &_prio_class)) {
+                pr_err("process_prio_cls_get() failed\n");
+                goto out;
+        }
+
+        prio_class = _prio_class.PriorityClass;
+        if (prio_class >= MaxProcPrioClasses) {
+                pr_err("invalid priority class value: %zu\n", prio_class);
+                goto out;
+        }
+
+        pr_raw("+-------+--------------------------------------------+---------------------------+\n");
+        pr_raw("| tid   | priority info                              | node | affinity mask      |\n");
+        pr_raw("|       |----------+------+---------+--------+-------|      |                    |\n");
+        pr_raw("|       | level    | base | page    | io     | boost |      |                    |\n");
+        pr_raw("+-------+----------+------+---------+--------+-------+------+--------------------+\n");
+
+        process_threads_iterate(pid, thread_info_dump, (void *)prio_class);
+
+        pr_raw("+-------+----------+------+---------+--------+-------+------+--------------------+\n");
+
+out:
+        CloseHandle(process);
+}
+
+void profile_proc_info_dump_cb(proc_entry_t *proc, va_list ap)
+{
+        profile_t *profile = va_arg(ap, profile_t *);
+
+        if (proc->profile != profile)
+                return;
+
+        process_info_dump(proc);
+}
+
+void profile_processes_info_dump(tommy_hashtable *tbl, profile_t *profile)
+{
+        proc_entry_for_each(tbl, profile_proc_info_dump_cb, profile);
 }
