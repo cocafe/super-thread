@@ -143,6 +143,7 @@ struct profile {
         uint32_t                sched_mode;
         uint32_t                oneshot;
         uint32_t                always_set;
+        uint32_t                delay;
         struct supervisor_cfg   processes;
         struct supervisor_cfg   threads;
 };

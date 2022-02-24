@@ -1210,9 +1210,10 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                 tommy_node *n = tbl->bucket[i];
 
                 while (n) {
-                        proc_entry_t *entry      = n->data;
+                        proc_entry_t *entry = n->data;
 
-                        proc_entry_print(entry, 0);
+                        if (!entry->is_new)
+                                proc_entry_print(entry, 0);
 
                         n = n->next;
                 }
@@ -1818,9 +1819,27 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
                 goto out;
 
         if (!proc->is_new && !is_wstr_equal(info->name, exe_name)) {
-                pr_info("this is rare, process name \"%s\" \"%s\" mismatched!\n", info->name, exe_name);
+                pr_info("this is rare, process name \"%ls\" \"%ls\" mismatched!\n", info->name, exe_name);
                 err = -EINVAL;
                 goto out;
+        }
+
+        if (proc->is_new) {
+                if (profile->delay && (proc->on_stamp == 0)) {
+                        proc->on_stamp = sv->update_stamp + profile->delay;
+                        goto out;
+                }
+
+                if (proc->on_stamp) {
+                        if (proc->on_stamp - sv->update_stamp < profile->delay) {
+                                pr_dbg("pid: %zu \"%ls\" is delayed, on_stamp:%u curr_stamp:%u\n",
+                                       info->pid, info->name, proc->on_stamp, sv->update_stamp);
+                                goto out;
+                        }
+
+                        // timed out, no more delay
+                        proc->on_stamp = 0;
+                }
         }
 
         if (profile->oneshot && proc->oneshot)
@@ -2001,7 +2020,7 @@ void *supervisor_woker(void *data)
         struct timespec ts = { 0 };
         supervisor_t *sv = data;
 
-        sv->update_stamp = 1;
+        sv->update_stamp = 0;
 
         pr_info("START\n");
 
@@ -2019,8 +2038,6 @@ void *supervisor_woker(void *data)
                 supervisor_loop(sv);
 
                 sv->update_stamp++;
-                if (unlikely(sv->update_stamp == 0)) // overflowed
-                        sv->update_stamp = 1;
 
                 clock_gettime(CLOCK_REALTIME, &ts);
                 ts.tv_sec += g_cfg.sampling_sec; // set next wake up point
@@ -2244,6 +2261,9 @@ out:
 void profile_proc_info_dump_cb(proc_entry_t *proc, va_list ap)
 {
         profile_t *profile = va_arg(ap, profile_t *);
+
+        if (proc->is_new)
+                return;
 
         if (proc->profile != profile)
                 return;

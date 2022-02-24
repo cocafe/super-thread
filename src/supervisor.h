@@ -52,6 +52,7 @@ struct proc_entry {
 
         GROUP_AFFINITY  last_aff;
         uint32_t        last_stamp;
+        uint32_t        on_stamp;
 
         uint8_t         is_new;
         uint8_t         oneshot;
