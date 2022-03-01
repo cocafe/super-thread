@@ -354,6 +354,16 @@ PROFILE_VALUE_SWITCH(thrd_cfg_prio_boost, uint32_t, offsetof(profile_t, thrd_cfg
 PROFILE_VALUE_SWITCH(thrd_cfg_io_prio,    uint32_t, offsetof(profile_t, thrd_cfg.io_prio));
 PROFILE_VALUE_SWITCH(thrd_cfg_page_prio,  uint32_t, offsetof(profile_t, thrd_cfg.page_prio));
 
+static void profile_delayed_update(struct tray_menu *m)
+{
+        profile_t *profile = m->userdata;
+
+        if (profile->delay)
+                m->checked = 1;
+        else
+                m->checked = 0;
+}
+
 static void profile_sub_menu_update(struct tray_menu *m) {
         for (struct tray_menu *sub = m->submenu; sub; sub++) {
                 if (sub->is_end)
@@ -767,6 +777,7 @@ static struct tray_menu profile_menu_template[] = {
         { .is_separator = 1 },
         { .name = L"Oneshot", .pre_show = profile_oneshot_update, .on_click = profile_oneshot_click },
         { .name = L"Always Set", .pre_show = profile_always_set_update, .on_click = profile_always_set_click },
+        { .name = L"Delayed", .pre_show = profile_delayed_update, },
         { .is_separator = 1 },
         { .name = L"Info Dump", .on_click = profile_proc_thread_dump, },
         { .is_end = 1 },
