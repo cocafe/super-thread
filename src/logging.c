@@ -27,8 +27,10 @@ void console_show(int set_focus)
         ShowWindow(g_console_hwnd, SW_NORMAL); // SW_RESTORE
         g_console_is_hide = 0;
 
-        if (set_focus)
+        if (set_focus) {
                 SetFocus(g_console_hwnd);
+                SetForegroundWindow(g_console_hwnd);
+        }
 }
 
 void console_hide(void)
