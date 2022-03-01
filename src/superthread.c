@@ -225,7 +225,7 @@ static void save_click(struct tray_menu *m)
         pr_raw("saved json config: %s\n", path);
 }
 
-void tray_lbtn_dblclick(struct tray *tray, void *data)
+void tray_lbtn_click(struct tray *tray, void *data)
 {
         UNUSED_PARAM(data);
 
@@ -269,8 +269,8 @@ struct tray g_tray = {
                 { .name = L"Quit", .on_click = quit_cb },
                 { .is_end = 1 }
         },
-        .lbtn_click = NULL,
-        .lbtn_dblclick = tray_lbtn_dblclick,
+        .lbtn_click = tray_lbtn_click,
+        .lbtn_dblclick = NULL,
 };
 
 struct tray_menu *profile_menu_find(struct tray_menu *top_menu)
