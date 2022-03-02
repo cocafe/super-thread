@@ -1222,7 +1222,7 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
         proc_info_msg(0);
 }
 
-static int profile_proc_prio_class_set(profile_t *profile, HANDLE process)
+static int profile_proc_prio_class_set(profile_t *profile, proc_entry_t *entry, HANDLE process)
 {
         PROCESS_PRIORITY_CLASS prio_class __attribute__((aligned(4))) = { 0 };
         uint32_t prio_cls_cfg = profile->proc_cfg.prio_class;
@@ -1235,13 +1235,24 @@ static int profile_proc_prio_class_set(profile_t *profile, HANDLE process)
 
         prio_class.PriorityClass = profile_proc_prio_cls[prio_cls_cfg];
 
+        if (entry->info.prio_class.PriorityClass == prio_class.PriorityClass) {
+                pr_verbose("pid: %zu \"%ls\" nothing to change\n", entry->info.pid, entry->info.name);
+                return 0;
+        }
+
         if (process_prio_cls_set(process, &prio_class))
                 return -EFAULT;
+
+        pr_dbg("pid: %zu \"%ls\" priority class %s -> %s\n",
+               entry->info.pid,
+               entry->info.name,
+               proc_prio_strs[entry->info.prio_class.PriorityClass],
+               proc_prio_strs[prio_class.PriorityClass]);
 
         return 0;
 }
 
-static int profile_proc_prio_boost_set(profile_t *profile, HANDLE process)
+static int profile_proc_prio_boost_set(profile_t *profile, proc_entry_t *entry, HANDLE process)
 {
         BOOL enabled;
         uint32_t prio_boost_cfg = profile->proc_cfg.prio_boost;
@@ -1256,10 +1267,21 @@ static int profile_proc_prio_boost_set(profile_t *profile, HANDLE process)
         if (prio_boost_cfg == STRVAL_ENABLED)
                 enabled = 1;
 
+        if (entry->info.prio_boost == enabled) {
+                pr_verbose("pid: %zu \"%ls\" nothing to change\n", entry->info.pid, entry->info.name);
+                return 0;
+        }
+
+        pr_dbg("pid: %zu \"%ls\" priority boost %d -> %d\n",
+               entry->info.pid,
+               entry->info.name,
+               entry->info.prio_boost,
+               enabled);
+
         return process_prio_boost_set(process, enabled);
 }
 
-static int profile_proc_io_prio_set(profile_t *profile, HANDLE process)
+static int profile_proc_io_prio_set(profile_t *profile, proc_entry_t *entry, HANDLE process)
 {
         IO_PRIORITY_HINT io_prio;
         uint32_t io_prio_cfg = profile->proc_cfg.io_prio;
@@ -1272,13 +1294,24 @@ static int profile_proc_io_prio_set(profile_t *profile, HANDLE process)
 
         io_prio = profile_ioprio_ntval[io_prio_cfg];
 
+        if (entry->info.io_prio == io_prio) {
+                pr_verbose("pid: %zu \"%ls\" nothing to change\n", entry->info.pid, entry->info.name);
+                return 0;
+        }
+
+        pr_dbg("pid: %zu \"%ls\" io priority %s -> %s\n",
+               entry->info.pid,
+               entry->info.name,
+               io_prio_strs[entry->info.io_prio],
+               io_prio_strs[io_prio]);
+
         if (process_io_prio_set(process, &io_prio))
                 return -EFAULT;
 
         return 0;
 }
 
-static int profile_proc_page_prio_set(profile_t *profile, HANDLE process)
+static int profile_proc_page_prio_set(profile_t *profile, proc_entry_t *entry, HANDLE process)
 {
         ULONG page_prio;
         uint32_t page_prio_cfg = profile->proc_cfg.page_prio;
@@ -1290,6 +1323,17 @@ static int profile_proc_page_prio_set(profile_t *profile, HANDLE process)
                 return 0;
 
         page_prio = profile_page_prio_ntval[page_prio_cfg];
+
+        if (entry->info.page_prio == page_prio) {
+                pr_verbose("pid: %zu \"%ls\" nothing to change\n", entry->info.pid, entry->info.name);
+                return 0;
+        }
+
+        pr_dbg("pid: %zu \"%ls\" page priority %s -> %s\n",
+               entry->info.pid,
+               entry->info.name,
+               page_prio_strs[entry->info.page_prio],
+               page_prio_strs[page_prio]);
 
         return process_page_prio_set(process, page_prio);
 }
@@ -1753,20 +1797,20 @@ static int proc_info_update(proc_info_t *info, HANDLE process)
         return err;
 }
 
-static int process_config_apply(profile_t *profile, HANDLE process)
+static int process_config_apply(profile_t *profile, proc_entry_t *entry, HANDLE hdl)
 {
         int err;
 
-        if ((err = profile_proc_prio_class_set(profile, process)))
+        if ((err = profile_proc_prio_class_set(profile, entry, hdl)))
                 return err;
 
-        if ((err = profile_proc_prio_boost_set(profile, process)))
+        if ((err = profile_proc_prio_boost_set(profile, entry, hdl)))
                 return err;
 
-        if ((err = profile_proc_io_prio_set(profile, process)))
+        if ((err = profile_proc_io_prio_set(profile, entry, hdl)))
                 return err;
 
-        if ((err = profile_proc_page_prio_set(profile, process)))
+        if ((err = profile_proc_page_prio_set(profile, entry, hdl)))
                 return err;
 
         return 0;
@@ -1779,7 +1823,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         wchar_t exe_name[_MAX_FNAME] = { 0 };
         int err = 0;
         DWORD status;
-        HANDLE process;
+        HANDLE proc_hdl;
 
         if (!profile) {
                 pr_err("profile == NULL\n");
@@ -1787,18 +1831,18 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         }
 
         // XXX: some dead processes still can be opened
-        process = OpenProcess(PROCESS_ALL_ACCESS |
-                              PROCESS_QUERY_INFORMATION |
-                              PROCESS_QUERY_LIMITED_INFORMATION,
-                              FALSE,
-                              info->pid);
-        if (!process) {
+        proc_hdl = OpenProcess(PROCESS_ALL_ACCESS |
+                               PROCESS_QUERY_INFORMATION |
+                               PROCESS_QUERY_LIMITED_INFORMATION,
+                               FALSE,
+                               info->pid);
+        if (!proc_hdl) {
                 pr_info("OpenProcess() failed, pid %zu \"%ls\", err=%lu, maybe dead?\n",
                         info->pid, info->name, GetLastError());
                 return -ENOENT;
         }
 
-        if (0 == GetExitCodeProcess(process, &status)) {
+        if (0 == GetExitCodeProcess(proc_hdl, &status)) {
                 pr_info("GetExitCodeProcess() failed, pid %zu \"%ls\", err=%lu\n",
                         info->pid, info->name, GetLastError());
                 err = -EFAULT;
@@ -1845,17 +1889,17 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         if (profile->oneshot && proc->oneshot)
                 goto out;
 
-        if ((err = proc_info_update(info, process))) {
+        if ((err = proc_info_update(info, proc_hdl))) {
                 pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
                 goto out;
         }
 
-        if ((err = process_config_apply(profile, process)))
+        if ((err = process_config_apply(profile, proc, proc_hdl)))
                 goto out;
 
         switch (profile->sched_mode) {
         case SUPERVISOR_PROCESSES:
-                err = supervisor_processes_sched(sv, proc, process);
+                err = supervisor_processes_sched(sv, proc, proc_hdl);
                 break;
 
         case SUPERVISOR_THREADS:
@@ -1869,7 +1913,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         }
 
         // update again after applying settings
-        if ((err = proc_info_update(info, process)))
+        if ((err = proc_info_update(info, proc_hdl)))
                 pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
 
         proc->is_new = 0;
@@ -1879,7 +1923,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
 out:
         proc->last_stamp = sv->update_stamp;
 
-        CloseHandle(process);
+        CloseHandle(proc_hdl);
 
         return err;
 }
