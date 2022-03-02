@@ -1122,9 +1122,9 @@ int process_list_build(supervisor_t *sv)
                         continue;
                 }
 
-                pr_info("pid: %lu \"%ls\" new process matched profile \"%ls\"\n",
-                        pe32.th32ProcessID, pe32.szExeFile,
-                        g_cfg.profiles[profile_idx].name);
+                pr_rawlvl(INFO, "pid: %lu \"%ls\" new process matched profile \"%ls\"\n",
+                          pe32.th32ProcessID, pe32.szExeFile,
+                          g_cfg.profiles[profile_idx].name);
 
                 proc_entry_init_insert(proc_selected,
                                        pe32.th32ProcessID,
@@ -1243,11 +1243,11 @@ static int profile_proc_prio_class_set(profile_t *profile, proc_entry_t *entry, 
         if (process_prio_cls_set(process, &prio_class))
                 return -EFAULT;
 
-        pr_dbg("pid: %zu \"%ls\" priority class %s -> %s\n",
-               entry->info.pid,
-               entry->info.name,
-               proc_prio_strs[entry->info.prio_class.PriorityClass],
-               proc_prio_strs[prio_class.PriorityClass]);
+        pr_rawlvl(DEBUG, "pid: %zu \"%ls\" priority class %s -> %s\n",
+                         entry->info.pid,
+                         entry->info.name,
+                         proc_prio_strs[entry->info.prio_class.PriorityClass],
+                         proc_prio_strs[prio_class.PriorityClass]);
 
         return 0;
 }
@@ -1272,11 +1272,11 @@ static int profile_proc_prio_boost_set(profile_t *profile, proc_entry_t *entry, 
                 return 0;
         }
 
-        pr_dbg("pid: %zu \"%ls\" priority boost %d -> %d\n",
-               entry->info.pid,
-               entry->info.name,
-               entry->info.prio_boost,
-               enabled);
+        pr_rawlvl(DEBUG, "pid: %zu \"%ls\" priority boost %d -> %d\n",
+                         entry->info.pid,
+                         entry->info.name,
+                         entry->info.prio_boost,
+                         enabled);
 
         return process_prio_boost_set(process, enabled);
 }
@@ -1299,11 +1299,11 @@ static int profile_proc_io_prio_set(profile_t *profile, proc_entry_t *entry, HAN
                 return 0;
         }
 
-        pr_dbg("pid: %zu \"%ls\" io priority %s -> %s\n",
-               entry->info.pid,
-               entry->info.name,
-               io_prio_strs[entry->info.io_prio],
-               io_prio_strs[io_prio]);
+        pr_rawlvl(DEBUG, "pid: %zu \"%ls\" io priority %s -> %s\n",
+                         entry->info.pid,
+                         entry->info.name,
+                         io_prio_strs[entry->info.io_prio],
+                         io_prio_strs[io_prio]);
 
         if (process_io_prio_set(process, &io_prio))
                 return -EFAULT;
@@ -1329,11 +1329,11 @@ static int profile_proc_page_prio_set(profile_t *profile, proc_entry_t *entry, H
                 return 0;
         }
 
-        pr_dbg("pid: %zu \"%ls\" page priority %s -> %s\n",
-               entry->info.pid,
-               entry->info.name,
-               page_prio_strs[entry->info.page_prio],
-               page_prio_strs[page_prio]);
+        pr_rawlvl(DEBUG, "pid: %zu \"%ls\" page priority %s -> %s\n",
+                         entry->info.pid,
+                         entry->info.name,
+                         page_prio_strs[entry->info.page_prio],
+                         page_prio_strs[page_prio]);
 
         return process_page_prio_set(process, page_prio);
 }
@@ -1850,7 +1850,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         }
 
         if (status != STILL_ACTIVE) {
-                pr_info("pid %zu \"%ls\" has been terminated\n", info->pid, info->name);
+                pr_rawlvl(INFO, "pid %zu \"%ls\" had been terminated\n", info->pid, info->name);
                 err = -ENOENT;
                 goto out;
         }
@@ -1876,8 +1876,8 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
 
                 if (proc->on_stamp) {
                         if (proc->on_stamp - sv->update_stamp < profile->delay) {
-                                pr_dbg("pid: %zu \"%ls\" is delayed, on_stamp:%u curr_stamp:%u\n",
-                                       info->pid, info->name, proc->on_stamp, sv->update_stamp);
+                                pr_rawlvl(DEBUG, "pid: %zu \"%ls\" is delayed, on_stamp:%u curr_stamp:%u\n",
+                                          info->pid, info->name, proc->on_stamp, sv->update_stamp);
                                 goto out;
                         }
 
@@ -1948,8 +1948,8 @@ static int profile_settings_apply(supervisor_t *sv)
                         err = _profile_settings_apply(sv, n->data);
                         if (err) {
                                 proc_entry_t *proc = n->data;
-                                pr_dbg("pid: %5zu \"%ls\" delete process\n",
-                                       proc->info.pid, proc->info.name);
+                                pr_rawlvl(DEBUG, "pid: %5zu \"%ls\" remove process from list\n",
+                                          proc->info.pid, proc->info.name);
 
                                 tommy_hashtable_remove_existing(tbl, n);
                                 proc_entry_free(n->data);
