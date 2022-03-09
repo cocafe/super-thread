@@ -89,12 +89,6 @@ struct supervisor {
         uint8_t           paused;
 };
 
-struct thrd_aff_set_data {
-        supervisor_t *sv;
-        proc_entry_t *proc;
-        GROUP_AFFINITY *aff;
-};
-
 extern supervisor_t g_sv;
 
 int supervisor_init(supervisor_t *sv);

@@ -98,7 +98,18 @@ static const char *page_prio_strs[] = {
         [MEMORY_PRIORITY_NORMAL]        = "normal",
 };
 
-static int thread_prio_level_conv(int nt_value)
+static const char *prio_level_strs[] = {
+        [THRD_PRIO_LVL_UNCHANGED]       = "invalid",
+        [THRD_PRIO_LVL_IDLE]            = "idle",
+        [THRD_PRIO_LVL_LOWEST]          = "lowest",
+        [THRD_PRIO_LVL_BELOW_NORMAL]    = "normal-",
+        [THRD_PRIO_LVL_NORMAL]          = "normal",
+        [THRD_PRIO_LVL_ABOVE_NORMAL]    = "normal+",
+        [THRD_PRIO_LVL_HIGHEST]         = "highest",
+        [THRD_PRIO_LVL_TIME_CRITICAL]   = "timecrit",
+};
+
+static int thread_prio_level_cfgval(int nt_value)
 {
         switch (nt_value) {
         case THREAD_PRIORITY_IDLE:
@@ -113,11 +124,11 @@ static int thread_prio_level_conv(int nt_value)
         case THREAD_PRIORITY_NORMAL:
                 return THRD_PRIO_LVL_NORMAL;
 
-        case THREAD_PRIORITY_HIGHEST:
-                return THRD_PRIO_LVL_HIGHEST;
-
         case THREAD_PRIORITY_ABOVE_NORMAL:
                 return THRD_PRIO_LVL_ABOVE_NORMAL;
+
+        case THREAD_PRIORITY_HIGHEST:
+                return THRD_PRIO_LVL_HIGHEST;
 
         case THREAD_PRIORITY_TIME_CRITICAL:
                 return THRD_PRIO_LVL_TIME_CRITICAL;
@@ -127,6 +138,17 @@ static int thread_prio_level_conv(int nt_value)
                 return -1;
         }
 }
+
+static int thread_prio_level_ntval[] = {
+        [THRD_PRIO_LVL_UNCHANGED]       = THREAD_PRIORITY_ERROR_RETURN,
+        [THRD_PRIO_LVL_IDLE]            = THREAD_PRIORITY_IDLE,
+        [THRD_PRIO_LVL_LOWEST]          = THREAD_PRIORITY_LOWEST,
+        [THRD_PRIO_LVL_BELOW_NORMAL]    = THREAD_PRIORITY_BELOW_NORMAL,
+        [THRD_PRIO_LVL_NORMAL]          = THREAD_PRIORITY_NORMAL,
+        [THRD_PRIO_LVL_ABOVE_NORMAL]    = THREAD_PRIORITY_ABOVE_NORMAL,
+        [THRD_PRIO_LVL_HIGHEST]         = THREAD_PRIORITY_HIGHEST,
+        [THRD_PRIO_LVL_TIME_CRITICAL]   = THREAD_PRIORITY_TIME_CRITICAL,
+};
 
 /**
  * https://docs.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities
@@ -457,11 +479,13 @@ static int image_path_extract_file_name(DWORD pid, wchar_t *exe_name, size_t max
         return 0;
 }
 
-static int process_threads_iterate(DWORD pid, int (*func)(DWORD tid, void *), void *data)
+static int process_threads_iterate(DWORD pid, int (*func)(DWORD tid, va_list), ...)
 {
         HANDLE snap;
         THREADENTRY32 te32;
         int err = 0;
+
+        va_list ap;
 
         if (!func)
                 return -EINVAL;
@@ -480,15 +504,19 @@ static int process_threads_iterate(DWORD pid, int (*func)(DWORD tid, void *), vo
                 goto out_handle;
         }
 
+        va_start(ap, func);
+
         do {
                 // say pid = 0 to iterate system-wide threads
                 if (pid != 0 && pid != te32.th32OwnerProcessID)
                         continue;
 
-                if ((err = func(te32.th32ThreadID, data)))
+                if ((err = func(te32.th32ThreadID, ap)))
                         break;
 
         } while(Thread32Next(snap, &te32));
+
+        va_end(ap);
 
 out_handle:
         CloseHandle(snap);
@@ -1351,10 +1379,10 @@ static void affinity_mask_limit(GROUP_AFFINITY *new_aff, uint64_t affinity, uint
         new_aff->Group = group;
 }
 
-static int process_sched_thread_affinity_set(DWORD tid, void *data)
+static int process_sched_thread_affinity_set(DWORD tid, va_list ap)
 {
-        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->proc;
-        GROUP_AFFINITY *new_aff = ((struct thrd_aff_set_data *)data)->aff;
+        proc_entry_t *proc = va_arg(ap, proc_entry_t *);
+        GROUP_AFFINITY *new_aff = va_arg(ap, GROUP_AFFINITY *);
         GROUP_AFFINITY *proc_aff = &proc->last_aff;
         GROUP_AFFINITY curr_aff;
         size_t pid = proc->info.pid;
@@ -1409,6 +1437,8 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *proc
         GROUP_AFFINITY *last_aff = &proc->last_aff;
         int err;
 
+        UNUSED_PARAM(sv);
+
         if (!info->use_thread_affinity) {
                 GROUP_AFFINITY *curr_aff = &info->curr_aff;
 
@@ -1431,13 +1461,7 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *proc
 
                 err = proc_group_affinity_set(process, new_aff);
         } else {
-                struct thrd_aff_set_data data = {
-                        .sv = sv,
-                        .proc = proc,
-                        .aff = new_aff,
-                };
-
-                err = process_threads_iterate(info->pid, process_sched_thread_affinity_set, &data);
+                err = process_threads_iterate(info->pid, process_sched_thread_affinity_set, proc, new_aff);
         }
 
         if (proc->is_new) {
@@ -1558,10 +1582,10 @@ static thrd_entry_t *thrd_entry_get(tommy_hashtable *tbl, DWORD tid, DWORD pid)
         return NULL;
 }
 
-static int thread_node_rr_affinity_set(DWORD tid, void *data)
+static int thread_node_rr_affinity_set(DWORD tid, va_list ap)
 {
-        supervisor_t *sv = ((struct thrd_aff_set_data *)data)->sv;
-        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->proc;
+        supervisor_t *sv = va_arg(ap, supervisor_t *);
+        proc_entry_t *proc = va_arg(ap, proc_entry_t *);
         thrd_entry_t *thrd_entry = thrd_entry_get(&proc->threads, tid, proc->info.pid);
         wchar_t *proc_name = proc->info.name;
         size_t pid = proc->info.pid;
@@ -1650,17 +1674,12 @@ not_exist:
 
 static int threads_sched_node_rr(supervisor_t *sv, proc_entry_t *proc)
 {
-        struct thrd_aff_set_data data = {
-                .sv = sv,
-                .proc = proc,
-        };
-
-        return process_threads_iterate(proc->info.pid, thread_node_rr_affinity_set, &data);
+        return process_threads_iterate(proc->info.pid, thread_node_rr_affinity_set, sv, proc);
 }
 
-static int thread_rand_node_affinity_set(DWORD tid, void *data)
+static int thread_rand_node_affinity_set(DWORD tid, va_list ap)
 {
-        proc_entry_t *proc = ((struct thrd_aff_set_data *)data)->proc;
+        proc_entry_t *proc = va_arg(ap, proc_entry_t *);
         profile_t *profile = proc->profile;
         wchar_t *proc_name = proc->info.name;
         size_t pid = proc->info.pid;
@@ -1704,15 +1723,12 @@ out:
 
 static int threads_sched_rand_node(supervisor_t *sv, proc_entry_t *proc)
 {
-        struct thrd_aff_set_data data = {
-                .sv = sv,
-                .proc = proc,
-        };
+        UNUSED_PARAM(sv);
 
         if (!proc->is_new && !proc->profile->always_set)
                 return 0;
 
-        return process_threads_iterate(proc->info.pid, thread_rand_node_affinity_set, &data);
+        return process_threads_iterate(proc->info.pid, thread_rand_node_affinity_set, proc);
 }
 
 static void dead_thread_entry_remove(supervisor_t *sv, proc_entry_t *proc_entry)
@@ -1797,21 +1813,240 @@ static int proc_info_update(proc_info_t *info, HANDLE process)
         return err;
 }
 
-static int process_config_apply(profile_t *profile, proc_entry_t *entry, HANDLE hdl)
+static int profile_thrd_io_prio_set(profile_t *profile,
+                                    proc_entry_t *proc,
+                                    DWORD tid,
+                                    HANDLE thrd_hdl)
+{
+        wchar_t *proc_name = proc->info.name;
+        size_t pid = proc->info.pid;
+        uint32_t io_prio_cfg = profile->thrd_cfg.io_prio;
+        IO_PRIORITY_HINT io_prio, new_prio;
+
+        if (io_prio_cfg == IO_PRIO_UNCHANGED)
+                return 0;
+
+        new_prio = profile_ioprio_ntval[io_prio_cfg];
+
+        if (!NT_SUCCESS(PhGetThreadIoPriority(thrd_hdl, &io_prio))) {
+                pr_err("pid: %zu \"%ls\" tid: %lu PhGetThreadIoPriority() failed: %lu\n",
+                       pid, proc_name, tid, GetLastError());
+                return -EFAULT;
+        }
+
+        if (io_prio == new_prio) {
+                pr_verbose("pid: %zu \"%ls\" tid: %lu nothing to change\n", pid, proc_name, tid);
+                return 0;
+        }
+
+        pr_rawlvl(DEBUG, "[pid: %5zu \"%ls\" tid: %6lu] set io priority %s -> %s\n",
+               pid, proc_name, tid,
+               io_prio_strs[io_prio], io_prio_strs[new_prio]);
+
+        if (!NT_SUCCESS(PhSetThreadIoPriority(thrd_hdl, new_prio))) {
+                pr_err("pid: %zu \"%ls\" tid: %lu PhSetThreadIoPriority() failed: %lu\n",
+                       pid, proc_name, tid, GetLastError());
+                return -EFAULT;
+        }
+
+        return 0;
+}
+
+static int profile_thrd_page_prio_set(profile_t *profile,
+                                      proc_entry_t *proc,
+                                      DWORD tid,
+                                      HANDLE thrd_hdl)
+{
+        wchar_t *proc_name = proc->info.name;
+        size_t pid = proc->info.pid;
+        uint32_t page_prio_cfg = profile->thrd_cfg.page_prio;
+        ULONG page_prio, new_prio;
+
+        if (page_prio_cfg == PAGE_PRIO_UNCHANGED)
+                return 0;
+
+        new_prio = profile_page_prio_ntval[page_prio_cfg];
+
+        if (!NT_SUCCESS(PhGetThreadPagePriority(thrd_hdl, &page_prio))) {
+                pr_err("pid: %zu \"%ls\" tid: %lu PhGetThreadPagePriority() failed: %lu\n",
+                       pid, proc_name, tid, GetLastError());
+                return -EFAULT;
+        }
+
+        if (page_prio == new_prio) {
+                pr_verbose("pid: %zu \"%ls\" tid: %lu nothing to change\n", pid, proc_name, tid);
+                return 0;
+        }
+
+        pr_rawlvl(DEBUG, "[pid: %5zu \"%ls\" tid: %6lu] set io priority %s -> %s\n",
+               pid, proc_name, tid,
+               page_prio_strs[page_prio], page_prio_strs[new_prio]);
+
+        if (!NT_SUCCESS(PhSetThreadPagePriority(thrd_hdl, new_prio))) {
+                pr_err("pid: %zu \"%ls\" tid: %lu PhSetThreadPagePriority() failed: %lu\n",
+                       pid, proc_name, tid, GetLastError());
+                return -EFAULT;
+        }
+
+        return 0;
+}
+
+static int profile_thrd_prio_boost_set(profile_t *profile,
+                                      proc_entry_t *proc,
+                                      DWORD tid,
+                                      HANDLE thrd_hdl)
+{
+        wchar_t *proc_name = proc->info.name;
+        size_t pid = proc->info.pid;
+        uint32_t boost_cfg = profile->thrd_cfg.prio_boost;
+        BOOL prio_boost, enable;
+
+        if (boost_cfg == LEAVE_AS_IS)
+                return 0;
+
+        enable = boost_cfg == STRVAL_ENABLED ? 1 : 0;
+
+        if (0 == GetThreadPriorityBoost(thrd_hdl, &prio_boost)) {
+                pr_err("pid: %zu \"%ls\" tid: %lu GetThreadPriorityBoost() failed, err=%lu\n",
+                       pid, proc_name, tid, GetLastError());
+                return -EFAULT;
+        }
+
+        // GetThreadPriorityBoost() return is_disabled
+        prio_boost = !prio_boost;
+
+        if (prio_boost == enable) {
+                pr_verbose("pid: %zu \"%ls\" tid: %lu nothing to change\n", pid, proc_name, tid);
+                return 0;
+        }
+
+        pr_rawlvl(DEBUG, "[pid: %5zu \"%ls\" tid: %6lu] set priority boost %d -> %d\n",
+               pid, proc_name, tid,
+               prio_boost, enable);
+
+        if (0 == SetThreadPriorityBoost(thrd_hdl, !enable)) {
+                pr_err("pid: %zu \"%ls\" tid: %lu SetThreadPriorityBoost() failed, err=%lu\n",
+                       pid, proc_name, tid, GetLastError());
+                return -EFAULT;
+        }
+
+        return 0;
+}
+
+static int profile_thrd_prio_level_set(profile_t *profile,
+                                       proc_entry_t *proc,
+                                       DWORD tid,
+                                       HANDLE thrd_hdl)
+{
+        wchar_t *proc_name = proc->info.name;
+        size_t pid = proc->info.pid;
+        int prio_cfg = (int)profile->thrd_cfg.prio_level;
+        int prio_level, _prio_level, _new_level;
+
+        if (prio_cfg == THRD_PRIO_LVL_UNCHANGED)
+                return 0;
+
+        _prio_level = GetThreadPriority(thrd_hdl);
+        if (_prio_level == THREAD_PRIORITY_ERROR_RETURN) {
+                pr_err("pid: %zu \"%ls\" tid: %lu GetThreadPriority() failed, err=%lu\n",
+                       pid, proc_name, tid, GetLastError());
+                return -EFAULT;
+        }
+
+        prio_level = thread_prio_level_cfgval(_prio_level);
+        if (prio_level == -1) {
+                pr_err("pid: %zu \"%ls\" tid: %lu unsupported priority value: %d\n",
+                       pid, proc_name, tid, _prio_level);
+                return -EFAULT;
+        }
+
+        if (prio_level == prio_cfg) {
+                pr_verbose("pid: %zu \"%ls\" tid: %lu nothing to change\n",
+                           pid, proc_name, tid);
+                return 0;
+        }
+
+        if (profile->thrd_cfg.prio_level_least) {
+                if (prio_level > prio_cfg) {
+                        pr_verbose("pid: %zu \"%ls\" tid: %lu desired priority is lower than current one\n",
+                                   pid, proc_name, tid);
+                        return 0;
+                }
+        }
+
+        pr_rawlvl(DEBUG, "[pid: %5zu \"%ls\" tid: %6lu] set priority level %s -> %s\n",
+               pid, proc_name, tid,
+               prio_level_strs[prio_level],
+               prio_level_strs[prio_cfg]);
+
+        _new_level = thread_prio_level_ntval[prio_cfg];
+        if (0 == SetThreadPriority(thrd_hdl, _new_level)) {
+                pr_err("pid: %zu \"%ls\" tid: %lu SetThreadPriority() failed, err=%lu\n",
+                       pid, proc_name, tid, GetLastError());
+                return -EFAULT;
+        }
+
+        return 0;
+}
+
+static int thread_settings_apply(DWORD tid, va_list ap)
+{
+        proc_entry_t *proc = va_arg(ap, proc_entry_t *);
+        profile_t *profile = proc->profile;
+        int err = 0;
+
+        HANDLE thread = OpenThread(THREAD_SET_INFORMATION |
+                                   THREAD_QUERY_INFORMATION,
+                                   FALSE,
+                                   tid);
+
+        if (!thread) { // thread might just be closed
+                pr_err("OpenThread() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
+                       tid, proc->info.pid, proc->info.name, GetLastError());
+                return -EFAULT;
+        }
+
+        if ((err = profile_thrd_io_prio_set(profile, proc, tid, thread)))
+                goto out;
+
+        if ((err = profile_thrd_page_prio_set(profile, proc, tid, thread)))
+                goto out;
+
+        if ((err = profile_thrd_prio_boost_set(profile, proc, tid, thread)))
+                goto out;
+
+        if ((err = profile_thrd_prio_level_set(profile, proc, tid, thread)))
+                goto out;
+
+out:
+        CloseHandle(thread);
+
+        // continue to apply other threads
+        return 0;
+}
+
+static int profile_thread_settings_apply(proc_entry_t *proc)
+{
+        return process_threads_iterate(proc->info.pid, thread_settings_apply, proc);
+}
+
+static int process_config_apply(profile_t *profile, proc_entry_t *proc, HANDLE hdl)
 {
         int err;
 
-        if ((err = profile_proc_prio_class_set(profile, entry, hdl)))
+        if ((err = profile_proc_prio_class_set(profile, proc, hdl)))
                 return err;
 
-        if ((err = profile_proc_prio_boost_set(profile, entry, hdl)))
+        if ((err = profile_proc_prio_boost_set(profile, proc, hdl)))
                 return err;
 
-        if ((err = profile_proc_io_prio_set(profile, entry, hdl)))
+        if ((err = profile_proc_io_prio_set(profile, proc, hdl)))
                 return err;
 
-        if ((err = profile_proc_page_prio_set(profile, entry, hdl)))
+        if ((err = profile_proc_page_prio_set(profile, proc, hdl)))
                 return err;
+
+        profile_thread_settings_apply(proc);
 
         return 0;
 }
@@ -1850,7 +2085,7 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
         }
 
         if (status != STILL_ACTIVE) {
-                pr_rawlvl(INFO, "pid %zu \"%ls\" had been terminated\n", info->pid, info->name);
+                pr_rawlvl(INFO, "pid: %zu \"%ls\" had been terminated\n", info->pid, info->name);
                 err = -ENOENT;
                 goto out;
         }
@@ -2170,9 +2405,9 @@ int supervisor_deinit(supervisor_t *sv)
         return 0;
 }
 
-int thread_info_dump(DWORD tid, void *data)
+int thread_info_dump(DWORD tid, va_list ap)
 {
-        size_t _prio_class = (size_t)data;
+        size_t _prio_class = va_arg(ap, size_t);
         size_t prio_class = proc_prio_cls_profile[_prio_class];
         ULONG page_prio;
         IO_PRIORITY_HINT io_prio;
@@ -2184,17 +2419,6 @@ int thread_info_dump(DWORD tid, void *data)
                                    THREAD_QUERY_INFORMATION,
                                    FALSE,
                                    tid);
-
-        static char *prio_level_strs[] = {
-                [THRD_PRIO_LVL_UNCHANGED]       = "invalid",
-                [THRD_PRIO_LVL_IDLE]            = "idle",
-                [THRD_PRIO_LVL_LOWEST]          = "lowest",
-                [THRD_PRIO_LVL_BELOW_NORMAL]    = "normal-",
-                [THRD_PRIO_LVL_NORMAL]          = "normal",
-                [THRD_PRIO_LVL_ABOVE_NORMAL]    = "normal+",
-                [THRD_PRIO_LVL_HIGHEST]         = "highest",
-                [THRD_PRIO_LVL_TIME_CRITICAL]   = "timecrit",
-        };
 
         if (0 == GetThreadPriorityBoost(thread, &prio_boost)) {
                 pr_err("GetThreadPriorityBoost() failed, err=%lu\n", GetLastError());
@@ -2224,7 +2448,7 @@ int thread_info_dump(DWORD tid, void *data)
                 goto out;
         }
 
-        if ((prio_level = thread_prio_level_conv(_prio_level)) == -1) {
+        if ((prio_level = thread_prio_level_cfgval(_prio_level)) == -1) {
                 pr_err("invalid priority level value: %d\n", _prio_level);
                 prio_level = THRD_PRIO_LVL_UNCHANGED;
         }
@@ -2294,7 +2518,7 @@ void process_info_dump(proc_entry_t *proc)
         pr_raw("|       | level    | base | page    | io     | boost |      |                    |\n");
         pr_raw("+-------+----------+------+---------+--------+-------+------+--------------------+\n");
 
-        process_threads_iterate(pid, thread_info_dump, (void *)prio_class);
+        process_threads_iterate(pid, thread_info_dump, prio_class);
 
         pr_raw("+-------+----------+------+---------+--------+-------+------+--------------------+\n");
 
