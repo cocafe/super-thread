@@ -1488,13 +1488,41 @@ static unsigned long node_map_next(unsigned long curr, unsigned long mask)
         unsigned long supported_mask = NODE_MAP_SUPPORT_MASK;
 
         for (int i = 0; i < (MAX_PROC_GROUPS * 2); i++) {
-                curr = curr << 1;
+                if (unlikely(curr == 0))
+                        curr = 1;
+                else
+                        curr = curr << 1;
 
                 // overflow, reset
                 if ((curr & supported_mask) == 0)
                         curr = 1;
 
                 if ((curr & mask) != 0)
+                        break;
+        }
+
+        return curr;
+}
+
+static uint64_t cpu_map_next(uint64_t curr, uint64_t tgt_mask, uint64_t avail_mask, uint32_t *is_overflowed)
+{
+        if (is_overflowed)
+                *is_overflowed = 0;
+
+        for (unsigned i = 0; i < sizeof(uint64_t) * BITS_PER_BYTE; i++) {
+                if (unlikely(curr == 0))
+                        curr = 1;
+                else
+                        curr = curr << 1;
+
+                if ((curr & avail_mask) == 0) {
+                        curr = 1;
+
+                        if (is_overflowed)
+                                *is_overflowed = 1;
+                }
+
+                if ((curr & tgt_mask) != 0)
                         break;
         }
 
@@ -1557,7 +1585,7 @@ static int supervisor_processes_sched(supervisor_t *sv, proc_entry_t *proc, HAND
         return 0;
 }
 
-static void thread_node_map_update(supervisor_t *sv, proc_entry_t *proc, GROUP_AFFINITY *new_aff)
+static void thread_node_rr_map_update(supervisor_t *sv, proc_entry_t *proc, GROUP_AFFINITY *new_aff)
 {
         profile_t *profile = proc->profile;
         unsigned long node_map = profile->threads.node_map;
@@ -1568,6 +1596,30 @@ static void thread_node_map_update(supervisor_t *sv, proc_entry_t *proc, GROUP_A
         affinity_mask_limit(new_aff, profile->threads.affinity,
                             find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next)));
 
+}
+
+static void thread_cpu_rr_map_update(supervisor_t *sv, proc_entry_t *proc, GROUP_AFFINITY *new_aff)
+{
+        profile_t *profile = proc->profile;
+        unsigned long node_map = profile->threads.node_map;
+        uint64_t affinity_map = profile->threads.affinity;
+        struct thrds_sched *val = &(sv->vals[proc->profile_idx].u.thrds_sched);
+
+        if (unlikely(val->node_map_next == 0))
+                val->node_map_next = 1;
+
+        uint32_t curr_grp = find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next));
+        uint64_t affinity_max = g_sys_info.cpu_grp[curr_grp].grp_mask;
+        uint32_t overflowed = 0;
+
+        val->cpu_map_next = cpu_map_next(val->cpu_map_next, affinity_map & affinity_max, affinity_max, &overflowed);
+
+        affinity_mask_limit(new_aff, val->cpu_map_next, curr_grp);
+
+        // move to next group if group mask specified multiple nodes
+        if (overflowed) {
+                val->node_map_next = node_map_next(val->node_map_next, node_map);
+        }
 }
 
 static thrd_entry_t *thrd_entry_get(tommy_hashtable *tbl, DWORD tid, DWORD pid)
@@ -1582,10 +1634,13 @@ static thrd_entry_t *thrd_entry_get(tommy_hashtable *tbl, DWORD tid, DWORD pid)
         return NULL;
 }
 
-static int thread_node_rr_affinity_set(DWORD tid, va_list ap)
+typedef void (*THRD_AFF_VAL_UPDATE)(supervisor_t *, proc_entry_t *, GROUP_AFFINITY *);
+
+static int thread_supervisor_affinity_set(DWORD tid, va_list ap)
 {
         supervisor_t *sv = va_arg(ap, supervisor_t *);
         proc_entry_t *proc = va_arg(ap, proc_entry_t *);
+        THRD_AFF_VAL_UPDATE val_update = va_arg(ap, THRD_AFF_VAL_UPDATE);
         thrd_entry_t *thrd_entry = thrd_entry_get(&proc->threads, tid, proc->info.pid);
         wchar_t *proc_name = proc->info.name;
         size_t pid = proc->info.pid;
@@ -1598,7 +1653,7 @@ static int thread_node_rr_affinity_set(DWORD tid, va_list ap)
                                      tid);
 
         if (!thrd_hdl) { // thread might just be closed
-                pr_err("OpenThread() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
+                pr_err("OpenThread() failed, tid: %lu pid: %zu \"%ls\" err=%lu\n",
                        tid, pid, proc_name, GetLastError());
                 if (thrd_entry)
                         delete = 1;
@@ -1607,7 +1662,7 @@ static int thread_node_rr_affinity_set(DWORD tid, va_list ap)
         }
 
         if (0 == GetThreadGroupAffinity(thrd_hdl, &curr_aff)) {
-                pr_err("GetThreadGroupAffinity() failed, tid=%lu pid=%zu name=\"%ls\" err=%lu\n",
+                pr_err("GetThreadGroupAffinity() failed, tid: %lu pid: %zu \"%ls\" err=%lu\n",
                        tid, pid, proc_name, GetLastError());
                 if (thrd_entry)
                         delete = 1;
@@ -1639,7 +1694,7 @@ static int thread_node_rr_affinity_set(DWORD tid, va_list ap)
                 }
         }
 
-        thread_node_map_update(sv, proc, &new_aff);
+        val_update(sv, proc, &new_aff);
 
         pr_rawlvl(DEBUG, "[pid: %5zu \"%ls\" tid: %5lu] [%2hu] [0x%016jx] ==> [%2hu] [0x%016jx]\n",
                   pid, proc_name, tid, curr_aff.Group, curr_aff.Mask, new_aff.Group, new_aff.Mask);
@@ -1674,7 +1729,20 @@ not_exist:
 
 static int threads_sched_node_rr(supervisor_t *sv, proc_entry_t *proc)
 {
-        return process_threads_iterate(proc->info.pid, thread_node_rr_affinity_set, sv, proc);
+        return process_threads_iterate(proc->info.pid,
+                                       thread_supervisor_affinity_set,
+                                       sv,
+                                       proc,
+                                       thread_node_rr_map_update);
+}
+
+static int threads_sched_cpu_rr(supervisor_t *sv, proc_entry_t *proc)
+{
+        return process_threads_iterate(proc->info.pid,
+                                       thread_supervisor_affinity_set,
+                                       sv,
+                                       proc,
+                                       thread_cpu_rr_map_update);
 }
 
 static int thread_rand_node_affinity_set(DWORD tid, va_list ap)
@@ -1721,7 +1789,7 @@ out:
         return 0;
 }
 
-static int threads_sched_rand_node(supervisor_t *sv, proc_entry_t *proc)
+static int threads_sched_node_rand(supervisor_t *sv, proc_entry_t *proc)
 {
         UNUSED_PARAM(sv);
 
@@ -1766,6 +1834,7 @@ static int supervisor_threads_sched(supervisor_t *sv, proc_entry_t *proc)
 {
         switch (proc->profile->threads.balance) {
         case THRD_BALANCE_CPU_RR:
+                threads_sched_cpu_rr(sv, proc);
                 break;
 
         case THRD_BALANCE_NODE_RR:
@@ -1773,7 +1842,7 @@ static int supervisor_threads_sched(supervisor_t *sv, proc_entry_t *proc)
                 break;
 
         case THRD_BALANCE_NODE_RAND:
-                threads_sched_rand_node(sv, proc);
+                threads_sched_node_rand(sv, proc);
                 break;
 
         case THRD_BALANCE_ONLOAD:

@@ -66,7 +66,6 @@ struct procs_sched {
 struct thrds_sched {
         unsigned long node_map_next;
         unsigned long cpu_map_next;
-        unsigned long cpu_map_init;
 };
 
 // intermediate variables

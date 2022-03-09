@@ -299,6 +299,7 @@ int profile_validate(profile_t *profile)
                 switch (profile->threads.balance) {
                 case THRD_BALANCE_NODE_RAND:
                 case THRD_BALANCE_NODE_RR:
+                case THRD_BALANCE_CPU_RR:
                         if (profile->threads.node_map == 0) {
                                 pr_err("profile [%ls] thread [node_map] matches none of processor groups on this system\n",
                                        profile->name);
@@ -313,7 +314,6 @@ int profile_validate(profile_t *profile)
                         break;
 
                 case THRD_BALANCE_ONLOAD:
-                case THRD_BALANCE_CPU_RR:
                         pr_info("algorithm is not implemented\n");
                         break;
 
