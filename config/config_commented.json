@@ -1,5 +1,15 @@
 {
-    "sampling_ms": 1000,
+    "sampling_sec": 10,
+    "logging": {
+        "console": true,
+        "verbose":false,
+        "debug": true,
+        "info": true,
+        "error": true,
+        "notice": true,
+        "warning": true,
+        "fatal": true
+    },
     "profiles": [
         {
             "name": "name_it",
@@ -8,34 +18,63 @@
                 {
                     "type" : "process",
                     "filter": "is", // [ is, contains ]
-                    "value": "foobar2000.exe"
+                    "value": "foobar2000.exe",
+                    // if both cmdline and handle identity are defined,
+                    // both of them must be matched (&& logic)
+                    "cmdline": { // OPTIONAL
+                        "filter": "contains",
+                        "value": "123123"
+                    },
+                    "file_handle": { // OPTIONAL, CAUTION: querying handle of some processes program may hang!
+                        "filter": "contains",
+                        "value": "babababa" // file handle can view on
+                    }
                 },
-                {
+                { // system-wide handle search, broken
                     "type": "file_handle",
                     "filter": "contains",
                     "value": "balabala.txt"
                 },
-                {
+                { // match system-wide processes's cmdline, not recommended
                     "type": "cmdline",
                     "filter": "contains",
                     "value": "--balabalabala"
                 }
             ],
-            "proc_prio": "unchanged", // [ rt, high, normal+, normal, normal-, low, idle, unchanged ]
-            "io_prio": "unchanged",  // [ high, normal, low, very_low, unchanged ]
+            // https://docs.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities
+            // thread base priority (scheduing uses) = process priority class + thread priority level
+            "process": {
+                "prio_class": "leave_as-is", // [ realtime, high, normal+, normal, normal-, low, idle, leave_as-is ]
+                "io_prio": "leave_as-is",  // [ high, normal, low, very_low, leave_as-is ]
+                "page_prio": "leave_as-is" // [ normal, below_normal, medium, low, very_low, leave_as-is ]
+                "prio_boost": "leave_as-is" // [ enabled, disabled, leave_as-is ]
+            },
+            "thread": {
+                "io_prio": "leave_as_is", // [ high, normal, low, very_low, leave_as-is ]
+                "page_prio": "leave_as_is", // [ normal, below_normal, medium, low, very_low, leave_as-is ]
+                "prio_boost": "leave_as-is", // [ enabled, disabled, leave_as-is ]
+                "prio_level": {
+                    "at_least": true, // all thread priority is not lower than spcified @level
+                    "level": "leave_as-is" // [ time_critical, highest, normal+, normal, normal-, lowest, idle ]
+                }
+            },
             "supervisor": {
                 "mode": "processes", // [ proecsses, threads ]
-                "oneshot": true, // only set affinity once for matched process
+                "delay": 3, // delay N interval to apply settings for the first time,
+                            // to fix some process may set self affinity on startup
+                "oneshot": true, // only set affinity once for each matched process
+                "always_set": false, // if @oneshot=false, ignore last affinity, always apply settings when update triggers
                 "processes": { // schedule base on matched processes
                     "node_map": "0xf0",  // by_map: only takes first set bit
                                          // rr: available nodes to do round-robin
-                    "balance": "by_map", // [ by_map, random, round_robin, onload ]
+                    "balance": "by_map", // [ by_map, node_random, node_rr, onload ]
                     "affinity": "0x00000000000000f0"    // affinity to apply to threads in PID
                 },
                 "threads": { // schedule base on all threads of one matched process
                     "node_map": "0x0f", // available nodes for selection
-                    "hyper-thread_group": false,
-                    "balance": "node_rr", // [ random, node_rr, cpu_rr, onload ]
+                    "balance": "node_rr", // [ node_random, node_rr, cpu_rr, onload ]
+                                          // node_rr: assign node rr for each thread
+                                          // cpu_rr: assign cpu rr for each thread, to avoid migration between cpus
                     "affinity": "0xffffffffffffffff" // -1 : all processors
                 }
             }
