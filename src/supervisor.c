@@ -1618,12 +1618,13 @@ static void thread_cpu_rr_map_update(supervisor_t *sv, proc_entry_t *proc, GROUP
 
         val->cpu_map_next = cpu_map_next(val->cpu_map_next, affinity_map & affinity_max, affinity_max, &overflowed);
 
-        affinity_mask_limit(new_aff, val->cpu_map_next, curr_grp);
-
         // move to next group if group mask specified multiple nodes
         if (overflowed) {
                 val->node_map_next = node_map_next(val->node_map_next, node_map);
+                curr_grp = find_first_bit(&val->node_map_next, SIZE_TO_BITS(val->node_map_next));
         }
+
+        affinity_mask_limit(new_aff, val->cpu_map_next, curr_grp);
 }
 
 static thrd_entry_t *thrd_entry_get(tommy_hashtable *tbl, DWORD tid, DWORD pid)
