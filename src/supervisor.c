@@ -2190,13 +2190,13 @@ static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
                 }
         }
 
-        if (profile->oneshot && proc->oneshot)
-                goto out;
-
         if ((err = proc_info_update(info, proc_hdl))) {
                 pr_err("failed to update info for pid %zu \"%ls\"\n", info->pid, info->name);
                 goto out;
         }
+
+        if (profile->oneshot && proc->oneshot)
+                goto out;
 
         if ((err = process_config_apply(profile, proc, proc_hdl)))
                 goto out;
