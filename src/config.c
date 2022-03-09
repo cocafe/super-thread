@@ -272,7 +272,7 @@ int profile_validate(profile_t *profile)
                 case PROC_BALANCE_RAND:
                 case PROC_BALANCE_RR:
                         if (profile->processes.node_map == 0) {
-                                pr_err("profile [%ls] node_map is not set which is needed for by_map\n",
+                                pr_err("profile [%ls] process [node_map] matches none of processor groups on this system\n",
                                        profile->name);
                                 return -EINVAL;
                         }
@@ -300,7 +300,7 @@ int profile_validate(profile_t *profile)
                 case THRD_BALANCE_NODE_RAND:
                 case THRD_BALANCE_NODE_RR:
                         if (profile->threads.node_map == 0) {
-                                pr_err("profile [%ls] node_map is not set which is needed for by_map\n",
+                                pr_err("profile [%ls] thread [node_map] matches none of processor groups on this system\n",
                                        profile->name);
                                 return -EINVAL;
                         }
