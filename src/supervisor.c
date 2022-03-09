@@ -1181,7 +1181,7 @@ void proc_info_msg(int header)
         pr_raw("+------------+-------+--------------------+---------+---------+--------+-------+----------+------+--------------------+\n");
 }
 
-void proc_entry_print(proc_entry_t *entry, int ignore_oneshot)
+void proc_entry_dump(proc_entry_t *entry, int ignore_oneshot)
 {
         proc_info_t *info        = &entry->info;
         profile_t *profile       = &g_cfg.profiles[entry->profile_idx];
@@ -1191,6 +1191,7 @@ void proc_entry_print(proc_entry_t *entry, int ignore_oneshot)
         uint8_t prio_class       = info->prio_class.PriorityClass;
         wchar_t profile_name[11] = { 0 };
         wchar_t name[18]         = { 0 };
+        int curr_grp = info->curr_aff.Group;
 
         wcsncpy(profile_name, profile->name, WCBUF_LEN(profile_name));
         profile_name[WCBUF_LEN(profile_name) - 1] = L'\0';
@@ -1214,6 +1215,9 @@ void proc_entry_print(proc_entry_t *entry, int ignore_oneshot)
                 return;
         }
 
+        if (info->is_threaded)
+                curr_grp = entry->last_aff.Group;
+
         pr_raw("| %-10ls | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
                profile_name,
                info->pid,
@@ -1222,9 +1226,9 @@ void proc_entry_print(proc_entry_t *entry, int ignore_oneshot)
                page_prio > MEMORY_PRIORITY_NORMAL ? "ERR" : page_prio_strs[page_prio],
                io_prio < MaxIoPriorityTypes ? io_prio_strs[io_prio] : "ERR",
                prio_boost,
-               info->use_thread_affinity,
-               info->curr_aff.Group,
-               info->curr_aff.Mask);
+               info->is_threaded,
+               curr_grp,
+               info->is_threaded ? 0xdeaddeaddeaddead : info->curr_aff.Mask);
 }
 
 void proc_hashit_iterate(tommy_hashtable *tbl)
@@ -1241,7 +1245,7 @@ void proc_hashit_iterate(tommy_hashtable *tbl)
                         proc_entry_t *entry = n->data;
 
                         if (!entry->is_new)
-                                proc_entry_print(entry, 0);
+                                proc_entry_dump(entry, 0);
 
                         n = n->next;
                 }
@@ -1439,7 +1443,7 @@ static int processes_sched_set_new_affinity(supervisor_t *sv, proc_entry_t *proc
 
         UNUSED_PARAM(sv);
 
-        if (!info->use_thread_affinity) {
+        if (!info->is_threaded) {
                 GROUP_AFFINITY *curr_aff = &info->curr_aff;
 
                 if (!proc->is_new && !proc->always_set) {
@@ -1875,9 +1879,9 @@ static int proc_info_update(proc_info_t *info, HANDLE process)
         if ((err = proc_group_affinity_get(process, &info->curr_aff)))
                 return err;
 
-        info->use_thread_affinity = 0;
+        info->is_threaded = 0;
         if (info->curr_aff.Mask == 0)
-                info->use_thread_affinity = 1;
+                info->is_threaded = 1;
 
         return err;
 }
@@ -2567,7 +2571,7 @@ void process_info_dump(proc_entry_t *proc)
 
         proc_info_msg(1);
         proc_info_update(&proc->info, process);
-        proc_entry_print(proc, 1);
+        proc_entry_dump(proc, 1);
         proc_info_msg(0);
 
         if (process_prio_cls_get(process, &_prio_class)) {

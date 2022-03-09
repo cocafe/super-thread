@@ -38,7 +38,7 @@ struct proc_info {
         IO_PRIORITY_HINT        io_prio;
         ULONG                   page_prio;
         GROUP_AFFINITY          curr_aff;
-        uint8_t                 use_thread_affinity;
+        uint8_t                 is_threaded;
 };
 
 struct proc_entry {
