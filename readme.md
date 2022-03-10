@@ -68,7 +68,7 @@ for details, please check `./config/config_commented.json`
 - `threads` mode
   * `node_rr`: set all threads of processes matched profile with round-robin processor group and affinity provided
   * `node_random`: set all threads of processes matched profile with random processor group and affinity provided
-  * `cpu_rr`: not implemented
+  * `cpu_rr`: set threads to single logical cpu by round-robin manner with affinity and node provided, to avoid scheduling migration. if multiple nodes are specified in `node_map`, threads will assign to next node when current node is fully assigned.
   * `onload`: not implemented
 
 #### COMPILE
