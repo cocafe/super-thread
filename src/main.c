@@ -117,6 +117,7 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         int err;
 
         heap_init();
+        SetProcessDPIAware();
 
 #ifdef UNICODE
         if ((err = wchar_longopts_parse(__argc, __wargv, g_opt_list))) {
