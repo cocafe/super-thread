@@ -54,6 +54,8 @@ this tool runs in a simple manner:
 
 #### CONFIG
 
+⚠ `Threads mode` is recommended over `Processes mode` on Windows 11, since the API itself sometimes may even fail in Task Manager.
+
 for details, please check `./config/config_commented.json`
 
 * `processes` mode
