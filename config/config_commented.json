@@ -1,8 +1,8 @@
 {
-    "sampling_sec": 10,
+    "sampling_sec": 10,     // sampling interval
     "logging": {
-        "console": true,
-        "verbose":false,
+        "console": true,    // show console on start?
+        "verbose":false,    // logging level selections
         "debug": true,
         "info": true,
         "error": true,
@@ -46,7 +46,7 @@
             "process": {
                 "prio_class": "leave_as-is", // [ realtime, high, normal+, normal, normal-, low, idle, leave_as-is ]
                 "io_prio": "leave_as-is",  // [ high, normal, low, very_low, leave_as-is ]
-                "page_prio": "leave_as-is" // [ normal, below_normal, medium, low, very_low, leave_as-is ]
+                "page_prio": "leave_as-is", // [ normal, below_normal, medium, low, very_low, leave_as-is ]
                 "prio_boost": "leave_as-is" // [ enabled, disabled, leave_as-is ]
             },
             "thread": {
