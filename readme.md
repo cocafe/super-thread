@@ -36,7 +36,7 @@ If a thread has ever called `SetThreadGroupAffinity()`, then the process it belo
 
 isn't there a API named `SetProcessGroupAffinity()`? yes, and meanwhile, no. there are two APIs named like that in MinGW header, but both of them are stump. starting with Win10, I believed, task manager can directly change process group affinity, there are definitely some APIs can change process group directly. disassembling the taskmgr.exe, and those hidden API were disclosed.  
 
-so when a process is not threaded, this tool call hidden API to set process group affinity. but in practice, after calling multiple times of hidden APIs, even `GetProcessGroupAffinity()` only, process will turn in to a threaded process, those hidden APIs do not work anymore on it. and if a program was migrated to another processor group manually, its new threads will still start on previous processor group, it will be come threaded program likely. Windows 11 has an API named `SetProcessDefaultCpuSetMasks()` can fix this behavior probably, but Windows 10 is likely out-of-luck.
+so when a process is not threaded, this tool call hidden API to set process group affinity. and if a program was migrated to another processor group manually, its new threads will still start on previous processor group, it will be come threaded program likely. Windows 11 has an API named `SetProcessDefaultCpuSetMasks()` can fix this behavior probably, but Windows 10 is likely out-of-luck.
 
 ⚠ you have to understand NUMA a bit, in some workloads, assigning threads across different CPU socket will not provide any performance benefits at all, or performance may drop due to accessing remote memory and busy socket communications.
 
