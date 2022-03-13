@@ -9,18 +9,27 @@ project(${PROJECT_NAME} C)
 set(CMAKE_C_STANDARD 11)
 
 set(WIN32_UNICODE true)
+set(WIN32_LINK_SUBSYS window)
+set(HAVE_CJSON true)
+set(HAVE_ICONV true)
 
 if (WIN32 AND MINGW)
-        # -mconsole: console subsystem
-        # -mwindows: window subsystem
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mwindows -DSUBSYS_WINDOW -static -static-libgcc ")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -static -static-libgcc ")
 
         if (WIN32_UNICODE)
                 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -municode -DUNICODE -D_UNICODE ")
         endif()
+
+        if (${WIN32_LINK_SUBSYS} STREQUAL "window")
+                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mwindows -DSUBSYS_WINDOW ")
+        endif()
+
+        if (${WIN32_LINK_SUBSYS} STREQUAL "console")
+                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mconsole ")
+        endif()
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra ")
+set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -Wall -Wextra ")
 
 if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g3 -ggdb3 -gdwarf-4 -O0 ")
@@ -35,8 +44,6 @@ set(SOURCE_FILES
     src/endian.h
     src/logging.c
     src/logging.h
-    src/cJSON.c
-    src/cJSON.h
     src/list.h
     src/config_opts.c
     src/config_opts.h
@@ -74,7 +81,17 @@ if (WIN32 AND MINGW)
         set(APPRES_OBJS ${WINRES_OUT})
 endif()
 
-add_executable(${PROJECT_NAME} ${SOURCE_FILES} ${APPRES_OBJS})
+add_executable(${PROJECT_NAME} ${APPRES_OBJS})
+target_sources(${PROJECT_NAME} PRIVATE ${SOURCE_FILES})
+
+if (HAVE_CJSON)
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAVE_CJSON ")
+        target_sources(${PROJECT_NAME} PRIVATE src/cJSON.c src/cJSON.h)
+endif()
+
+if (HAVE_ICONV)
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAVE_ICONV ")
+endif()
 
 include_directories(tommyds)
 include_directories(asset)

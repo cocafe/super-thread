@@ -13,7 +13,9 @@
 
 #include <sys/types.h>
 
+#ifdef HAVE_CJSON
 #include "cJSON.h"
+#endif
 
 //
 // endian magic
@@ -31,6 +33,14 @@
 #define MACRO_STR_EXPAND(mm)    #mm
 // do not put () on @m which should be a macro
 #define MACRO_TO_STR(m)         MACRO_STR_EXPAND(m)
+
+/* Indirect stringification.  Doing two levels allows the parameter to be a
+ * macro itself.  For example, compile with -DFOO=bar, __stringify(FOO)
+ * converts to "bar".
+ */
+
+#define __stringify_1(x...)	#x
+#define __stringify(x...)	__stringify_1(x)
 
 //
 // compiler magic
@@ -349,8 +359,10 @@ static __always_inline char *buf_get(buf_t *buf)
 // json
 //
 
+#ifdef HAVE_CJSON
 int json_print(const char *json_path);
 void json_traverse_print(cJSON *node, uint32_t depth);
+#endif
 
 //
 // MSVC heap
@@ -374,9 +386,7 @@ int snprintf_resize(char **buf, size_t *pos, size_t *len, const char *fmt, ...);
 // iconv utils
 //
 
-#define ICONV_UTILS
-
-#ifdef ICONV_UTILS
+#ifdef HAVE_ICONV
 
 #include <iconv.h>
 
@@ -414,7 +424,19 @@ static inline int iconv_utf82wc(char *in, size_t in_bytes, wchar_t *out, size_t 
         return iconv_convert(in, in_bytes, ICONV_UTF8, ICONV_WCHAR, out, out_bytes);
 }
 
-#endif // ICONV_UTILS
+#else
+
+static inline int iconv_wc2utf8(wchar_t *in, size_t in_bytes, char *out, size_t out_bytes)
+{
+        return -EINVAL;
+}
+
+static inline int iconv_utf82wc(char *in, size_t in_bytes, wchar_t *out, size_t out_bytes)
+{
+        return -EINVAL;
+}
+
+#endif // HAVE_ICONV
 
 //
 // bit-map helpers

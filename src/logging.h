@@ -2,6 +2,7 @@
 #define __LOGGING_H__
 
 #include <stdio.h>
+#include <stdint.h>
 #include <wchar.h>
 
 #include "utils.h"

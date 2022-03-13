@@ -11,7 +11,6 @@
 #endif
 
 #include "logging.h"
-#include "cJSON.h"
 #include "utils.h"
 
 //
@@ -473,6 +472,7 @@ int buf_backward_discard(buf_t *buf, size_t len)
  * cJSON utils
  */
 
+#ifdef HAVE_CJSON
 void json_traverse_do_print(cJSON *node)
 {
         switch (node->type) {
@@ -575,13 +575,13 @@ free_text:
 
         return err;
 }
-
+#endif // HAVE_CJSON
 
 /**
  * iconv utils
  */
 
-#ifdef ICONV_UTILS
+#ifdef HAVE_ICONV
 
 #include <iconv.h>
 
@@ -626,7 +626,7 @@ char *iconv_locale_cp(void)
         return NULL;
 }
 
-#endif
+#endif // __WINNT__
 
 /**
  * @param in: should be (char *) or (wchar_t *)
@@ -722,4 +722,4 @@ out:
         return ret;
 }
 
-#endif // ICONV_UTILS
+#endif // HAVE_ICONV
