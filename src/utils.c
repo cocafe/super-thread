@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -8,6 +9,15 @@
 
 #if defined (__MSVCRT__) || defined (_MSC_VER)
 #include <heapapi.h>
+#endif
+
+#if defined (__linux__) || defined (__CYGWIN__)
+#include <arpa/inet.h>
+#endif
+
+#if defined (__linux__)
+#include <sys/socket.h>
+#include <netinet/in.h>
 #endif
 
 #include "logging.h"
@@ -198,6 +208,8 @@ char *__str_ncpy(char *dest, const char *src, size_t dest_sz)
 // pthread helper
 //
 
+#ifdef HAVE_PTHREAD_HELPER
+
 #define PMUTEX_DBG_TRY_TIMES            (7)
 #define PMUTEX_DEB_TRY_SECS             (1)
 
@@ -219,6 +231,8 @@ int pthread_mutex_multi_trylock(pthread_mutex_t *lock)
 
         return ret;
 }
+
+#endif // HAVE_PTHREAD_HELPER
 
 //
 // helper
@@ -243,6 +257,7 @@ int is_valid_ipaddr(char *ipstr, int ipver)
 }
 #endif
 
+#ifdef HAVE_MATH_HELPER
 int float_equal(float a, float b, float epsilon)
 {
         // abs() also handles -0.0 and +0.0
@@ -269,6 +284,7 @@ int float_equal(float a, float b, float epsilon)
                 return (diff / fminf((abs_a + abs_b), FLT_MIN)) < epsilon;
         }
 }
+#endif // HAVE_MATH_HELPER
 
 char *file_read(const char *path)
 {

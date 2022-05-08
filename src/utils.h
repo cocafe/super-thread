@@ -10,6 +10,7 @@
 #include <math.h>
 #include <float.h>
 #include <string.h>
+#include <wchar.h>
 
 #include <sys/types.h>
 
@@ -162,8 +163,14 @@
 
 #define WCBUF_LEN               ARRAY_SIZE
 
+#ifdef HAVE_PTHREAD_HELPER
 int pthread_mutex_multi_trylock(pthread_mutex_t *lock);
+#endif
+
+#ifdef HAVE_MATH_HELPER
 int float_equal(float a, float b, float epsilon);
+#endif
+
 int is_valid_ipaddr(char *ipstr, int ipver);
 char *file_read(const char *path);
 int file_write(const char *path, const void *data, size_t sz);
@@ -428,11 +435,21 @@ static inline int iconv_utf82wc(char *in, size_t in_bytes, wchar_t *out, size_t 
 
 static inline int iconv_wc2utf8(wchar_t *in, size_t in_bytes, char *out, size_t out_bytes)
 {
+        UNUSED_PARAM(in);
+        UNUSED_PARAM(in_bytes);
+        UNUSED_PARAM(out);
+        UNUSED_PARAM(out_bytes);
+
         return -EINVAL;
 }
 
 static inline int iconv_utf82wc(char *in, size_t in_bytes, wchar_t *out, size_t out_bytes)
 {
+        UNUSED_PARAM(in);
+        UNUSED_PARAM(in_bytes);
+        UNUSED_PARAM(out);
+        UNUSED_PARAM(out_bytes);
+
         return -EINVAL;
 }
 

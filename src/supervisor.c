@@ -292,6 +292,7 @@ int system_handle_iterate(int (*foreach)(SYSTEM_HANDLE_ENTRY *, va_list arg), ..
         return err;
 }
 
+// FIXME: what if same hash is inserted into queue
 static void *tommy_hashtable_get(tommy_hashtable *tbl, tommy_hash_t hash)
 {
         tommy_node *n = tommy_hashtable_bucket(tbl, hash);
