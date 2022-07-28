@@ -31,7 +31,21 @@
 #include "myntapi.h"
 #include "superthread.h"
 
+typedef BOOL (*GetProcessDefaultCpuSetMasks)(HANDLE Process,
+                                             PGROUP_AFFINITY CpuSetMasks,
+                                             USHORT CpuSetMaskCount,
+                                             PUSHORT RequiredMaskCount);
+
+typedef BOOL (*SetProcessDefaultCpuSetMasks)(HANDLE Process,
+                                             PGROUP_AFFINITY CpuSetMasks,
+                                             USHORT CpuSetMaskCount);
+
 supervisor_t g_sv = { 0 };
+
+static HINSTANCE krnl_dll;
+
+static GetProcessDefaultCpuSetMasks _GetProcessDefaultCpuSetMasks;
+static SetProcessDefaultCpuSetMasks _SetProcessDefaultCpuSetMasks;
 
 static uint8_t profile_proc_prio_cls[] = {
         [PROC_PRIO_CLS_UNCHANGED]       = ProcPrioClassUnknown,
@@ -1485,7 +1499,13 @@ static int processes_sched_by_map(supervisor_t *sv, proc_entry_t *proc, HANDLE p
         new_aff.Group = find_first_bit((void *)&profile->processes.node_map,
                                        SIZE_TO_BITS(profile->processes.node_map));
 
-        return processes_sched_set_new_affinity(sv, proc, process, &new_aff);;
+        // for win11+, this should set default affinity for new threads
+        if (_SetProcessDefaultCpuSetMasks) {
+                // this function can't be failed if params are valid
+                _SetProcessDefaultCpuSetMasks(process, &new_aff, 1);
+        }
+
+        return processes_sched_set_new_affinity(sv, proc, process, &new_aff);
 }
 
 static unsigned long node_map_next(unsigned long curr, unsigned long mask)
@@ -1560,7 +1580,7 @@ static int processes_sched_node_rand(supervisor_t *sv, proc_entry_t *proc, HANDL
         new_aff.Mask = profile->processes.affinity;
         new_aff.Group = rand() % g_sys_info.nr_cpu_grp; // 0 <= result < nr_cpu_grp
 
-        return processes_sched_set_new_affinity(sv, proc, process, &new_aff);;
+        return processes_sched_set_new_affinity(sv, proc, process, &new_aff);
 }
 
 static int supervisor_processes_sched(supervisor_t *sv, proc_entry_t *proc, HANDLE process)
@@ -2440,6 +2460,19 @@ int supervisor_init(supervisor_t *sv)
 
         srand(time(NULL));
 
+        krnl_dll = LoadLibrary(L"kernel32.dll");
+        if (krnl_dll == NULL) {
+                pr_err("failed to load kernel32.dll\n");
+                return -EINVAL;
+        }
+
+        _SetProcessDefaultCpuSetMasks = (void *)GetProcAddress(krnl_dll, "SetProcessDefaultCpuSetMasks");
+        _GetProcessDefaultCpuSetMasks = (void *)GetProcAddress(krnl_dll, "GetProcessDefaultCpuSetMasks");
+
+        if (!_SetProcessDefaultCpuSetMasks || !_GetProcessDefaultCpuSetMasks) {
+                pr_info("{Get/Set}ProcessDefaultCpuSetMasks() is not available\n");
+        }
+
         sem_init(&sv->sleeper, 0, 0);
         pthread_mutex_init(&sv->trigger_lck, NULL);
         tommy_hashtable_init(&sv->proc_selected, PROC_HASH_TBL_BUCKET);
@@ -2476,6 +2509,9 @@ int supervisor_deinit(supervisor_t *sv)
 
         pthread_mutex_destroy(&sv->trigger_lck);
         sem_destroy(&sv->sleeper);
+
+        if (krnl_dll)
+                FreeLibrary(krnl_dll);
 
         return 0;
 }
