@@ -37,7 +37,7 @@ elseif(${CMAKE_BUILD_TYPE} STREQUAL "Release")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 ")
 endif()
 
-add_subdirectory(tommyds)
+add_subdirectory(lib/tommyds)
 
 set(SOURCE_FILES
     src/main.c
@@ -93,7 +93,7 @@ if (HAVE_ICONV)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAVE_ICONV ")
 endif()
 
-include_directories(tommyds)
+include_directories(lib)
 include_directories(asset)
 include_directories(include)
 include_directories(include/phnt/include)

@@ -21,7 +21,7 @@
 
 #include <libgen.h>
 
-#include <tommy.h>
+#include <tommyds/tommy.h>
 #include <psapi.h>
 
 #include "config.h"

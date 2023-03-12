@@ -4,7 +4,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 
-#include <tommy.h>
+#include <tommyds/tommy.h>
 
 #include "myntapi.h"
 
