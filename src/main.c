@@ -125,6 +125,8 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 goto out;
         }
 
+        console_alloc_set(1);
+
         if ((err = logging_init()))
                 goto out;
 
