@@ -1,8 +1,8 @@
 #include <stdlib.h>
 
-#include "jkey.h"
+#include <libjj/jkey.h>
+
 #include "config.h"
-#include "logging.h"
 #include "sysinfo.h"
 #include "superthread.h"
 
@@ -120,10 +120,10 @@ int usrcfg_root_key_create(jbuf_t *b)
 
         {
                 void *profile_arr = jbuf_grow_arr_open(b, "profiles");
-                void *profile_obj;
 
                 jbuf_grow_arr_setup(b, profile_arr, (void *)&g_cfg.profiles, &g_cfg.profile_cnt, sizeof(profile_t));
-                jbuf_offset_obj_open(b, profile_obj, NULL, 0);
+
+                void *profile_obj = jbuf_offset_obj_open(b, NULL, 0);
 
                 jbuf_offset_add(b, wstrptr, "name", offsetof(profile_t, name));
                 jbuf_offset_add(b, bool, "enabled", offsetof(profile_t, enabled));
@@ -138,18 +138,14 @@ int usrcfg_root_key_create(jbuf_t *b)
                                                    sizeof(struct proc_identity));
 
                         {
-                                void *id_obj;
-
-                                jbuf_offset_obj_open(b, id_obj, NULL, 0);
+                                void *id_obj = jbuf_offset_obj_open(b, NULL, 0);
 
                                 jbuf_offset_strval_add(b, "type", offsetof(struct proc_identity, type), cfg_identity_type_strs, NUM_PROC_ID_TYPES);
                                 jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
                                 jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
 
                                 {
-                                        void *cmdl_obj;
-
-                                        jbuf_offset_objptr_open(b, cmdl_obj, "cmdline", sizeof(struct proc_identity), offsetof(struct proc_identity, cmdl));
+                                        void *cmdl_obj = jbuf_offset_objptr_open(b, "cmdline", sizeof(struct proc_identity), offsetof(struct proc_identity, cmdl));
 
                                         jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
                                         jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
@@ -158,9 +154,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                                 }
 
                                 {
-                                        void *hdl_obj;
-
-                                        jbuf_offset_objptr_open(b, hdl_obj, "file_handle", sizeof(struct proc_identity), offsetof(struct proc_identity, file_hdl));
+                                        void *hdl_obj = jbuf_offset_objptr_open(b, "file_handle", sizeof(struct proc_identity), offsetof(struct proc_identity, file_hdl));
 
                                         jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
                                         jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
@@ -175,9 +169,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                 }
 
                 {
-                        void *process_cfg;
-
-                        jbuf_offset_obj_open(b, process_cfg, "process", offsetof(profile_t, proc_cfg));
+                        void *process_cfg = jbuf_offset_obj_open(b, "process", offsetof(profile_t, proc_cfg));
 
                         jbuf_offset_strval_add(b, "prio_class", offsetof(struct proc_cfg, prio_class), cfg_prio_cls_strs, NUM_PROC_PRIO_CLASS);
                         jbuf_offset_strval_add(b, "prio_boost", offsetof(struct proc_cfg, prio_boost), cfg_tristate_strs, NUM_TRISTATE_VALS);
@@ -188,14 +180,10 @@ int usrcfg_root_key_create(jbuf_t *b)
                 }
 
                 {
-                        void *thread_cfg;
-
-                        jbuf_offset_obj_open(b, thread_cfg, "thread", offsetof(profile_t, thrd_cfg));
+                        void *thread_cfg = jbuf_offset_obj_open(b, "thread", offsetof(profile_t, thrd_cfg));
 
                         {
-                                void *prio_level_obj;
-
-                                jbuf_offset_obj_open(b, prio_level_obj, "prio_level", 0);
+                                void *prio_level_obj = jbuf_offset_obj_open(b, "prio_level", 0);
 
                                 jbuf_offset_add(b, bool, "at_least", offsetof(struct thrd_cfg, prio_level_least));
                                 jbuf_offset_strval_add(b, "level", offsetof(struct thrd_cfg, prio_level), cfg_prio_lvl_strs, NUM_THRD_PRIO_LEVELS);
@@ -211,9 +199,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                 }
 
                 {
-                        void *supervisor_obj;
-
-                        jbuf_offset_obj_open(b, supervisor_obj, "supervisor", 0);
+                        void *supervisor_obj = jbuf_offset_obj_open(b, "supervisor", 0);
 
                         jbuf_offset_strval_add(b, "mode", offsetof(profile_t, sched_mode), cfg_supervisor_mode_strs, NUM_SUPERVISOR_GRANS);
                         jbuf_offset_add(b, bool, "oneshot", offsetof(profile_t, oneshot));
@@ -221,9 +207,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                         jbuf_offset_add(b, u32, "delay", offsetof(profile_t, delay));
 
                         {
-                                void *processes_obj;
-
-                                jbuf_offset_obj_open(b, processes_obj, "processes", offsetof(profile_t, processes));
+                                void *processes_obj = jbuf_offset_obj_open(b, "processes", offsetof(profile_t, processes));
 
                                 jbuf_offset_add(b, hex_u32, "node_map", offsetof(struct supervisor_cfg, node_map));
                                 jbuf_offset_strval_add(b, "balance", offsetof(struct supervisor_cfg, balance), cfg_proc_balance_strs, NUM_PROC_BALANCE);
@@ -233,9 +217,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                         }
 
                         {
-                                void *threads_obj;
-
-                                jbuf_offset_obj_open(b, threads_obj, "threads", offsetof(profile_t, threads));
+                                void *threads_obj = jbuf_offset_obj_open(b, "threads", offsetof(profile_t, threads));
 
                                 jbuf_offset_add(b, hex_u32, "node_map", offsetof(struct supervisor_cfg, node_map));
                                 jbuf_offset_strval_add(b, "balance", offsetof(struct supervisor_cfg, balance), cfg_thrd_balance_strs, NUM_THRD_BALANCE);

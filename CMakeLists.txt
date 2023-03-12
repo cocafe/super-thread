@@ -8,6 +8,12 @@ project(${PROJECT_NAME} C)
 
 set(CMAKE_C_STANDARD 11)
 
+set(JJCOM_HAVE_CJSON 1)
+#set(JJCOM_HAVE_SOCKET 1)
+set(JJCOM_HAVE_ICONV 1)
+set(JJCOM_HAVE_MATH 1)
+#set(JJCOM_HAVE_UUID 1)
+
 set(WIN32_UNICODE true)
 set(WIN32_LINK_SUBSYS window)
 set(HAVE_CJSON true)
@@ -38,21 +44,12 @@ elseif(${CMAKE_BUILD_TYPE} STREQUAL "Release")
 endif()
 
 add_subdirectory(lib/tommyds)
+add_subdirectory(lib/libjj)
 
 set(SOURCE_FILES
     src/main.c
-    src/endian.h
-    src/logging.c
-    src/logging.h
-    src/list.h
-    src/config_opts.c
-    src/config_opts.h
-    src/jkey.c
-    src/jkey.h
     src/config.c
     src/config.h
-    src/utils.c
-    src/utils.h
     src/supervisor.c
     src/supervisor.h
     src/myntapi.h
@@ -62,8 +59,6 @@ set(SOURCE_FILES
     src/tray.h
     src/superthread.h
     src/superthread.c
-    src/getopt.c
-    src/getopt.h
     asset/resource.h
     )
 
@@ -84,23 +79,16 @@ endif()
 add_executable(${PROJECT_NAME} ${APPRES_OBJS})
 target_sources(${PROJECT_NAME} PRIVATE ${SOURCE_FILES})
 
-if (HAVE_CJSON)
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAVE_CJSON ")
-        target_sources(${PROJECT_NAME} PRIVATE src/cJSON.c src/cJSON.h)
-endif()
+target_include_directories(${PROJECT_NAME} PUBLIC include)
+target_include_directories(${PROJECT_NAME} PUBLIC include/phnt/include)
+target_include_directories(${PROJECT_NAME} PUBLIC lib)
+target_include_directories(${PROJECT_NAME} PUBLIC asset)
+target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR})
 
-if (HAVE_ICONV)
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAVE_ICONV ")
-endif()
-
-include_directories(lib)
-include_directories(asset)
-include_directories(include)
-include_directories(include/phnt/include)
-
-target_link_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/tommyds)
+#target_link_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/tommyds)
 
 target_link_libraries(${PROJECT_NAME} tommyds)
+target_link_libraries(${PROJECT_NAME} jjcom)
 target_link_libraries(${PROJECT_NAME} iconv)
 target_link_libraries(${PROJECT_NAME} ntdll)
 target_link_libraries(${PROJECT_NAME} ntoskrnl)

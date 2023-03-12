@@ -8,12 +8,14 @@
 #include <winuser.h>
 #include <winternl.h>
 
-#include "utils.h"
+#include <libjj/logging.h>
+#include <libjj/opts.h>
+#include <libjj/utils.h>
+#include <libjj/malloc.h>
+
 #include "config.h"
-#include "logging.h"
 #include "sysinfo.h"
 #include "supervisor.h"
-#include "config_opts.h"
 #include "superthread.h"
 
 static int __privilege_get(const wchar_t *priv_name)
@@ -119,11 +121,7 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         heap_init();
         SetProcessDPIAware();
 
-#ifdef UNICODE
-        if ((err = wchar_longopts_parse(__argc, __wargv, g_opt_list))) {
-#else
-        if ((err = longopts_parse(__argc, __argv, g_opt_list))) {
-#endif
+        if ((err = lopts_parse(__argc, __wargv, NULL))) {
                 goto out;
         }
 
@@ -135,17 +133,17 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
 #endif
 
         if ((err = privilege_get())) {
-                MB_MSG_ERR("failed to get privileges");
+                mb_err("failed to get privileges");
                 goto exit_logging;
         }
 
         if ((err = sysinfo_init(&g_sys_info))) {
-                MB_MSG_ERR("failed to get system information");
+                mb_err("failed to get system information");
                 goto exit_logging;
         }
 
         if ((err = usrcfg_init())) {
-                MB_MSG_ERR("failed to load config: \"%s\"", g_cfg.json_path);
+                mb_err("failed to load config: \"%s\"", g_cfg.json_path);
                 goto exit_sysinfo;
         }
 
@@ -153,7 +151,7 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 console_hide();
 
         if ((err = superthread_tray_init(ins))) {
-                MB_MSG_ERR("failed to init tray\n");
+                mb_err("failed to init tray\n");
                 goto exit_usrcfg;
         }
 

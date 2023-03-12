@@ -5,7 +5,9 @@
 #include <winuser.h>
 #include <shellapi.h>
 
-#include "logging.h"
+#include <libjj/logging.h>
+#include <libjj/utils.h>
+
 #include "tray.h"
 
 static LRESULT CALLBACK tray_wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)

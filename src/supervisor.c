@@ -18,14 +18,18 @@
 #include <fileapi.h>
 #include <TlHelp32.h>
 #include <processthreadsapi.h>
+#include <psapi.h>
 
 #include <libgen.h>
 
 #include <tommyds/tommy.h>
-#include <psapi.h>
+
+#include <libjj/logging.h>
+#include <libjj/malloc.h>
+#include <libjj/utils.h>
+#include <libjj/ffs.h>
 
 #include "config.h"
-#include "logging.h"
 #include "sysinfo.h"
 #include "supervisor.h"
 #include "myntapi.h"

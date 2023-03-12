@@ -2,11 +2,12 @@
 
 #include <resource.h>
 
-#include "utils.h"
-#include "logging.h"
+#include <libjj/utils.h>
+#include <libjj/logging.h>
+#include <libjj/opts.h>
+
 #include "tray.h"
 #include "config.h"
-#include "config_opts.h"
 #include "supervisor.h"
 #include "superthread.h"
 
@@ -21,86 +22,7 @@ struct tray_menu *g_profile_menu;
 uint32_t g_should_exit;
 jbuf_t jbuf_usrcfg;
 
-//
-// long options
-//
-
-optdesc_t opt_help = {
-        .short_opt = 'h',
-        .long_opt  = "help",
-        .has_arg   = no_argument,
-        .to_set    = 0,
-        .data      = NULL,
-        .min       = 0,
-        .max       = 0,
-        .parse     = NULL,
-        .help      = {
-                "This help message",
-                NULL,
-        },
-};
-
-optdesc_t opt_console = {
-        .short_opt = 0,
-        .long_opt  = "no-console",
-        .has_arg   = no_argument,
-        .to_set    = 0,
-        .data      = &g_console_alloc,
-        .data_sz   = sizeof(g_console_alloc),
-        .data_def  = &(typeof(g_console_alloc)){ 1 },
-        .data_type = D_UNSIGNED,
-        .min       = 0,
-        .max       = 0,
-        .parse     = NULL,
-        .help      = {
-                "Disable console window",
-                NULL,
-        },
-};
-
-optdesc_t opt_json_path = {
-        .short_opt = 'c',
-        .long_opt  = "config",
-        .has_arg   = required_argument,
-        .to_set    = 0,
-        .data      = g_cfg.json_path,
-        .data_sz   = sizeof(g_cfg.json_path),
-        .data_def  = JSON_CFG_PATH_DEF,
-        .data_type = D_STRING,
-        .min       = 0,
-        .max       = 0,
-        .parse     = optarg_to_str,
-        .help      = {
-                "JSON config path",
-                NULL,
-        },
-};
-
-optdesc_t opt_log_color = {
-        .short_opt = 0,
-        .long_opt  = "colored",
-        .has_arg   = no_argument,
-        .to_set    = 1,
-        .data      = &g_logprint_colored,
-        .data_sz   = sizeof(g_logprint_colored),
-        .data_def  = &(typeof(g_logprint_colored)){ 1 },
-        .data_type = D_UNSIGNED,
-        .min       = 0,
-        .max       = 0,
-        .parse     = NULL,
-        .help      = {
-                "Print with color",
-                NULL,
-        },
-};
-
-optdesc_t *g_opt_list[] = {
-        &opt_help,
-        &opt_console,
-        &opt_json_path,
-        &opt_log_color,
-        NULL,
-};
+lsopt_strbuf(c, json_path, g_cfg.json_path, sizeof(g_cfg.json_path), "JSON config path");
 
 void superthread_quit(void)
 {
@@ -178,7 +100,7 @@ static void console_show_update(struct tray_menu *m)
                 return;
         }
 
-        if (g_console_is_hide)
+        if (is_console_hid())
                 m->checked = 0;
         else
                 m->checked = 1;
@@ -213,12 +135,12 @@ static void save_click(struct tray_menu *m)
         UNUSED_PARAM(m);
 
         if (usrcfg_save()) {
-                MB_MSG_ERR("usrcfg_save() failed\n");
+                mb_err("usrcfg_save() failed\n");
                 return;
         }
 
         if (jbuf_save(&jbuf_usrcfg, path)) {
-                MB_MSG_ERR("failed to save json to \"%s\"", path);
+                mb_err("failed to save json to \"%s\"", path);
                 return;
         }
 
@@ -229,7 +151,7 @@ void tray_lbtn_click(struct tray *tray, void *data)
 {
         UNUSED_PARAM(data);
 
-        if (g_console_is_hide)
+        if (is_console_hid())
                 console_show(1);
         else
                 console_hide();

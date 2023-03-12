@@ -4,7 +4,8 @@
 #include <minwindef.h>
 #include <pthread.h>
 
-#include "logging.h"
+#include <libjj/logging.h>
+#include <libjj/jkey.h>
 
 #define SAMPLING_SEC_DEF                (10)
 #define JSON_CFG_PATH_DEF               "config.json"

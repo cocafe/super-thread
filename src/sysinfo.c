@@ -1,12 +1,13 @@
 #include <stdint.h>
 
 #include <windows.h>
-
-#include "utils.h"
-#include "logging.h"
-#include "sysinfo.h"
-
 #include <sysinfoapi.h>
+
+#include <libjj/utils.h>
+#include <libjj/logging.h>
+#include <libjj/ffs.h>
+
+#include "sysinfo.h"
 
 sys_info_t g_sys_info = { 0 };
 
