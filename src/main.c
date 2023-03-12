@@ -118,6 +118,8 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         UNUSED_PARAM(cmdshow);
         int err;
 
+        setbuf(stdout, NULL);
+
         heap_init();
         SetProcessDPIAware();
 
