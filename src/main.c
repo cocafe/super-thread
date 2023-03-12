@@ -162,6 +162,9 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         supervisor_run(&g_sv);
 
         if (g_console_alloc) {
+                while (!IsWindowEnabled(g_console_hwnd))
+                        Sleep(1);
+
                 // if HANDLER is NULL, and TRUE is set, console will ignore ^C
                 // TRUE: add handler
                 // FALSE: remove handler
