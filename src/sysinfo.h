@@ -6,6 +6,7 @@ typedef struct sys_info sys_info_t;
 struct cpu_mask {
         uint64_t mask;
         uint64_t relation_mask;
+        uint8_t efficiency_cls;
 };
 
 struct cpu_grp_info {
@@ -17,6 +18,7 @@ struct cpu_grp_info {
 struct sys_info {
         uint32_t nr_cpu_grp;
         uint32_t nr_numa_node;
+        uint32_t is_heterogeneous;
         struct cpu_grp_info *cpu_grp;
 };
 

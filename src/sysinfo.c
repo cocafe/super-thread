@@ -9,12 +9,21 @@
 
 #include "sysinfo.h"
 
+typedef struct _PROCESSOR_RELATIONSHIP_WIN11 {
+        BYTE Flags;
+        BYTE EfficiencyClass;
+        BYTE Reserved[20];
+        WORD GroupCount;
+        GROUP_AFFINITY GroupMask[ANYSIZE_ARRAY];
+} PROCESSOR_RELATIONSHIP_WIN11, *PPROCESSOR_RELATIONSHIP_WIN11;
+
+
 sys_info_t g_sys_info = { 0 };
 
 int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
 {
         union {
-                PPROCESSOR_RELATIONSHIP Processor;
+                PPROCESSOR_RELATIONSHIP_WIN11 Processor;
                 PNUMA_NODE_RELATIONSHIP NumaNode;
                 PCACHE_RELATIONSHIP Cache;
                 PGROUP_RELATIONSHIP Group;
@@ -24,7 +33,7 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
 
         size_t grp_nr_cpu = find_first_zero_bit_u64(&sysinfo->cpu_grp[curr_grp].grp_mask) - 1;
 
-        u.Processor = &pslpi->Processor;
+        u.Processor = (void *)&pslpi->Processor;
 
         switch (pslpi->Relationship) {
         case RelationProcessorPackage: {
@@ -62,6 +71,11 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
                         m = &(sysinfo->cpu_grp[curr_grp].cpu_mask[curr_cpu]);
                         m->relation_mask = relation_mask;
 
+                        if (u.Processor->EfficiencyClass != 0) {
+                                sysinfo->is_heterogeneous = 1;
+                                m->efficiency_cls = u.Processor->EfficiencyClass;
+                        }
+
                         t &= ~BIT_ULL(curr_cpu);
 
                         // workaround to iterate cpu groups
@@ -75,6 +89,8 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
         case RelationGroup:
         case RelationCache:
         case RelationNumaNode:
+        case RelationNumaNodeEx:
+        case RelationProcessorModule:
                 break;
 
         default:
@@ -97,7 +113,7 @@ void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
 
         switch (pslpi->Relationship) {
         case RelationProcessorPackage:
-                pr_info("RelationProcessorPackage(GroupCount = %u)\n", u.Processor->GroupCount);
+                pr_raw("RelationProcessorPackage(GroupCount = %u)\n", u.Processor->GroupCount);
 
                 WORD GroupCount;
                 if ((GroupCount = u.Processor->GroupCount))
@@ -105,17 +121,17 @@ void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
                         PGROUP_AFFINITY GroupMask = u.Processor->GroupMask;
                         do
                         {
-                                pr_info("group<%u> Mask = %016llx\n", GroupMask->Group, GroupMask->Mask);
+                                pr_raw("group<%u> Mask = %016llx\n", GroupMask->Group, GroupMask->Mask);
                         } while (GroupMask++, --GroupCount);
                 }
                 break;
 
         case RelationProcessorCore:
-                pr_info("RelationProcessorCore(%x): Mask = %016llx\n", u.Processor->Flags, u.Processor->GroupMask->Mask);
+                pr_raw("RelationProcessorCore(%x): Mask = %016llx\n", u.Processor->Flags, u.Processor->GroupMask->Mask);
                 break;
 
         case RelationGroup:
-                pr_info("RelationGroup(%u/%u)\n", u.Group->ActiveGroupCount, u.Group->MaximumGroupCount);
+                pr_raw("RelationGroup(%u/%u)\n", u.Group->ActiveGroupCount, u.Group->MaximumGroupCount);
 
                 WORD ActiveGroupCount;
                 if ((ActiveGroupCount = u.Group->ActiveGroupCount))
@@ -123,7 +139,7 @@ void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
                         PPROCESSOR_GROUP_INFO GroupInfo = u.Group->GroupInfo;
                         do
                         {
-                                pr_info("<%d/%d %016llx>\n",
+                                pr_raw("<%d/%d %016llx>\n",
                                         GroupInfo->ActiveProcessorCount,
                                         GroupInfo->MaximumProcessorCount,
                                         GroupInfo->ActiveProcessorMask);
@@ -132,15 +148,19 @@ void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
                 break;
 
         case RelationCache:
-                pr_info("Cache L%d (%x, %lx) %x\n", u.Cache->Level, u.Cache->LineSize, u.Cache->CacheSize, u.Cache->Type);
+                pr_raw("Cache L%d (%x, %lx) %x\n", u.Cache->Level, u.Cache->LineSize, u.Cache->CacheSize, u.Cache->Type);
                 break;
 
         case RelationNumaNode:
-                pr_info("NumaNode<%lu> (group = %d, mask = %016llx)\n", u.NumaNode->NodeNumber, u.NumaNode->GroupMask.Group, u.NumaNode->GroupMask.Mask);
+                pr_raw("NumaNode<%lu> (group = %d, mask = %016llx)\n", u.NumaNode->NodeNumber, u.NumaNode->GroupMask.Group, u.NumaNode->GroupMask.Mask);
+                break;
+
+        case RelationNumaNodeEx:
+        case RelationProcessorModule:
                 break;
 
         default:
-                pr_info("unknown Relationship=%x\n", pslpi->Relationship);
+                pr_raw("unknown Relationship=%x\n", pslpi->Relationship);
         }
 }
 
@@ -235,11 +255,15 @@ int sysinfo_init(sys_info_t *info)
 
         for (size_t i = 0; i < info->nr_cpu_grp; i++) {
                 struct cpu_grp_info *grp = &info->cpu_grp[i];
-                pr_info("CPU GROUP: [%2zu] MASK: [0x%016jx]\n", i, grp->grp_mask);
+                pr_raw("CPU GROUP: [%2zu] Mask: [0x%016jx]\n", i, grp->grp_mask);
 
                 for (size_t j = 0; j < grp->cpu_cnt; j++) {
                         struct cpu_mask *m = &grp->cpu_mask[j];
-                        pr_info("CPU [%2zu] MASK: [0x%016jx] RELATION: [0x%016jx]\n", j, m->mask, m->relation_mask);
+                        pr_raw("CPU [%2zu] Mask: [0x%016jx] Relation: [0x%016jx]", j, m->mask, m->relation_mask);
+                        if (info->is_heterogeneous) {
+                                pr_raw(" [%s-Core]", m->efficiency_cls ? "P" : "E");
+                        }
+                        pr_raw("\n");
                 }
         }
 
