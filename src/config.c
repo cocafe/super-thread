@@ -8,19 +8,19 @@
 
 #define STR_LEAVE_AS_IS                 "leave_as-is"
 
-char *cfg_identity_type_strs[] = {
+const char *cfg_identity_type_strs[] = {
         [IDENTITY_NONE]                 = "none",
         [IDENTITY_PROCESS_EXE]          = "process",
         [IDENTITY_FILE_HANDLE]          = "file_handle",
         [IDENTITY_CMDLINE]              = "cmdline",
 };
 
-char *cfg_identity_filter_strs[] = {
+const char *cfg_identity_filter_strs[] = {
         [STR_FILTER_IS]                 = "is",
         [STR_FILTER_CONTAIN]            = "contains",
 };
 
-char *cfg_prio_cls_strs[] = {
+const char *cfg_prio_cls_strs[] = {
         [PROC_PRIO_CLS_UNCHANGED]       = STR_LEAVE_AS_IS,
         [PROC_PRIO_CLS_IDLE]            = "idle",
         [PROC_PRIO_CLS_NORMAL]          = "normal",
@@ -30,7 +30,7 @@ char *cfg_prio_cls_strs[] = {
         [PROC_PRIO_CLS_ABOVE_NORMAL]    = "normal+",
 };
 
-char *cfg_prio_lvl_strs[] = {
+const char *cfg_prio_lvl_strs[] = {
         [THRD_PRIO_LVL_UNCHANGED]       = STR_LEAVE_AS_IS,
         [THRD_PRIO_LVL_IDLE]            = "idle",
         [THRD_PRIO_LVL_LOWEST]          = "lowest",
@@ -41,7 +41,7 @@ char *cfg_prio_lvl_strs[] = {
         [THRD_PRIO_LVL_TIME_CRITICAL]   = "time_critical",
 };
 
-char *cfg_page_prio_strs[] = {
+const char *cfg_page_prio_strs[] = {
         [PAGE_PRIO_UNCHANGED]           = STR_LEAVE_AS_IS,
         [PAGE_PRIO_NORMAL]              = "normal",
         [PAGE_PRIO_BELOW_NORMAL]        = "normal-",
@@ -51,7 +51,7 @@ char *cfg_page_prio_strs[] = {
         [PAGE_PRIO_LOWEST]              = "lowest",
 };
 
-char *cfg_io_prio_strs[] = {
+const char *cfg_io_prio_strs[] = {
         [IO_PRIO_UNCHANGED]             = STR_LEAVE_AS_IS,
         [IO_PRIO_VERY_LOW]              = "very_low",
         [IO_PRIO_LOW]                   = "low",
@@ -59,26 +59,26 @@ char *cfg_io_prio_strs[] = {
         [IO_PRIO_HIGH]                  = "high",
 };
 
-char *cfg_proc_balance_strs[] = {
+const char *cfg_proc_balance_strs[] = {
         [PROC_BALANCE_BY_MAP]           = "by_map",
         [PROC_BALANCE_RAND]             = "node_random",
         [PROC_BALANCE_RR]               = "node_rr",
         [PROC_BALANCE_ONLOAD]           = "onload",
 };
 
-char *cfg_thrd_balance_strs[] = {
+const char *cfg_thrd_balance_strs[] = {
         [THRD_BALANCE_NODE_RAND]        = "node_random",
         [THRD_BALANCE_NODE_RR]          = "node_rr",
         [THRD_BALANCE_CPU_RR]           = "cpu_rr",
         [THRD_BALANCE_ONLOAD]           = "onload",
 };
 
-char *cfg_supervisor_mode_strs[] = {
+const char *cfg_supervisor_mode_strs[] = {
         [SUPERVISOR_PROCESSES]          = "processes",
         [SUPERVISOR_THREADS]            = "threads",
 };
 
-char *cfg_tristate_strs[] = {
+const char *cfg_tristate_strs[] = {
         [LEAVE_AS_IS]                   = STR_LEAVE_AS_IS,
         [STRVAL_ENABLED]                = "enabled",
         [STRVAL_DISABLED]               = "disabled",
