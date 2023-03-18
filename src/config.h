@@ -113,6 +113,7 @@ struct proc_cfg {
         uint32_t                prio_boost;
         uint32_t                page_prio;
         uint32_t                io_prio;
+        uint32_t                power_throttle;
 };
 
 struct thrd_cfg {
