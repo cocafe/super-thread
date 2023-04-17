@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <sysinfoapi.h>
 
+#include <libjj/compiler.h>
 #include <libjj/utils.h>
 #include <libjj/logging.h>
 #include <libjj/ffs.h>
@@ -17,7 +18,6 @@ typedef struct _PROCESSOR_RELATIONSHIP_WIN11 {
         GROUP_AFFINITY GroupMask[ANYSIZE_ARRAY];
 } PROCESSOR_RELATIONSHIP_WIN11, *PPROCESSOR_RELATIONSHIP_WIN11;
 
-
 sys_info_t g_sys_info = { 0 };
 
 int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
@@ -29,65 +29,112 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
                 PGROUP_RELATIONSHIP Group;
         } u;
 
+        static int next_grp = 0;
         static int32_t curr_grp = 0;
-
-        size_t grp_nr_cpu = find_first_zero_bit_u64(&sysinfo->cpu_grp[curr_grp].grp_mask) - 1;
+        size_t curr_cpu;
 
         u.Processor = (void *)&pslpi->Processor;
 
         switch (pslpi->Relationship) {
         case RelationProcessorPackage: {
                 // FIXME: behavior changed on Windows 11 ?
-//                WORD GroupCount = u.Processor->GroupCount;
-//                PGROUP_AFFINITY GroupMask = u.Processor->GroupMask;
+#if 0
+                WORD GroupCount = u.Processor->GroupCount;
+                PGROUP_AFFINITY GroupMask = u.Processor->GroupMask;
 
-//                if (GroupCount > 1) {
-//                        pr_err("unexpected: GroupCount %hu > 1\n", GroupCount);
-//                        return -EINVAL;
-//                }
+                if (GroupCount > 1) {
+                        pr_err("unexpected: GroupCount %hu > 1\n", GroupCount);
+                        return -EINVAL;
+                }
 
-//                do {
-//                        pr_info("group<%u> Mask = %016llx\n", GroupMask->Group, GroupMask->Mask);
-//                } while (GroupMask++, --GroupCount);
+                do {
+                        pr_info("group<%u> Mask = %016llx\n", GroupMask->Group, GroupMask->Mask);
+                } while (GroupMask++, --GroupCount);
 
-//                sysinfo->cpu_grp[curr_grp++].grp_mask = GroupMask->Mask;
+                sysinfo->cpu_grp[curr_grp++].grp_mask = GroupMask->Mask;
+#endif
                 break;
         }
 
         case RelationProcessorCore: {
                 uint64_t relation_mask = u.Processor->GroupMask->Mask;
                 uint64_t t = relation_mask;
-                size_t curr_cpu;
+
+                if (next_grp) {
+                        curr_grp++;
+                        next_grp = 0;
+                }
+
+                size_t grp_nr_cpu = find_first_zero_bit_u64(&sysinfo->cpu_grp[curr_grp].grp_mask) - 1;
 
                 do {
-                        struct cpu_mask *m;
+                        struct cpu_info *cpu;
 
                         curr_cpu = find_first_bit_u64(&t);
 
                         // if relation_mask is all ZERO
-                        if (curr_cpu == 64)
+                        if (curr_cpu >= 64)
                                 break;
 
-                        m = &(sysinfo->cpu_grp[curr_grp].cpu_mask[curr_cpu]);
-                        m->relation_mask = relation_mask;
+                        pr_raw("curr_cpu: %jd\n", curr_cpu);
+
+                        cpu = &(sysinfo->cpu_grp[curr_grp].cpu[curr_cpu]);
+                        cpu->relation_mask = relation_mask;
 
                         if (u.Processor->EfficiencyClass != 0) {
                                 sysinfo->is_heterogeneous = 1;
-                                m->efficiency_cls = u.Processor->EfficiencyClass;
+                                cpu->efficiency_cls = u.Processor->EfficiencyClass;
                         }
 
                         t &= ~BIT_ULL(curr_cpu);
 
                         // workaround to iterate cpu groups
                         if (curr_cpu == grp_nr_cpu)
-                                curr_grp++;
+                                next_grp = 1;
+                } while (1);
+
+                break;
+        }
+
+        case RelationCache: {
+                uint64_t relation_mask = u.Cache->GroupMask.Mask;
+                uint64_t t = relation_mask;
+
+                do {
+                        struct cpu_info *cpu;
+                        uint32_t level = u.Cache->Level;
+                        struct cache_info *cache;
+
+                        curr_cpu = find_first_bit_u64(&t);
+
+                        // if relation_mask is all ZERO
+                        if (curr_cpu >= 64)
+                                break;
+
+                        cpu = &(sysinfo->cpu_grp[curr_grp].cpu[curr_cpu]);
+
+                        if (level > CACHE_LEVEL_MAX) {
+                                pr_warn("Cache Level%d is not supported\n", level);
+                                break;
+                        }
+
+                        if ((uint32_t)u.Cache->Type >= NUM_CACHE_TYPES) {
+                                pr_warn("Cache Type %d is not supported\n", u.Cache->Type);
+                                break;
+                        }
+
+                        cache = &(cpu->cache[level]._[u.Cache->Type]);
+                        cache->relation_mask = u.Cache->GroupMask.Mask;
+                        cache->size = u.Cache->CacheSize;
+                        cache->type = u.Cache->Type;
+
+                        t &= ~BIT_ULL(curr_cpu);
                 } while (1);
 
                 break;
         }
 
         case RelationGroup:
-        case RelationCache:
         case RelationNumaNode:
         case RelationNumaNodeEx:
         case RelationProcessorModule:
@@ -102,6 +149,13 @@ int cpu_topology_info_process(sys_info_t *sysinfo, PSYSTEM_LOGICAL_PROCESSOR_INF
 
 void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
 {
+        static const char *str_cache_type[] = {
+                [CacheUnified] = "unified",
+                [CacheInstruction] = "instruction",
+                [CacheData] = "data",
+                [CacheTrace] = "trace",
+        };
+
         union {
                 PPROCESSOR_RELATIONSHIP Processor;
                 PNUMA_NODE_RELATIONSHIP NumaNode;
@@ -148,7 +202,9 @@ void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
                 break;
 
         case RelationCache:
-                pr_raw("Cache L%d (%x, %lx) %x\n", u.Cache->Level, u.Cache->LineSize, u.Cache->CacheSize, u.Cache->Type);
+                pr_raw("Cache L%d type: %x (%11s) line: 0x%x size: 0x%08lx mask: 0x%08jx\n",
+                       u.Cache->Level, u.Cache->Type, u.Cache->Type < ARRAY_SIZE(str_cache_type) ? str_cache_type[u.Cache->Type] : "unknown",
+                       u.Cache->LineSize, u.Cache->CacheSize, u.Cache->GroupMask.Mask);
                 break;
 
         case RelationNumaNode:
@@ -156,6 +212,13 @@ void DumpLPI(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX pslpi)
                 break;
 
         case RelationNumaNodeEx:
+                pr_raw("RelationNumaNodeEx\n");
+                break;
+
+        case RelationProcessorDie:
+                pr_raw("RelationProcessorDie\n");
+                break;
+
         case RelationProcessorModule:
                 break;
 
@@ -195,7 +258,7 @@ int cpu_topology_dump(sys_info_t *sysinfo)
                 if ((err = cpu_topology_info_process(sysinfo, buf)))
                         goto out;
 
-//                DumpLPI(buf);
+                DumpLPI(buf);
 
                 info_sz = ((SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *) buf)->Size;
                 buf = (uint8_t *)buf + info_sz;
@@ -211,6 +274,9 @@ int sysinfo_init(sys_info_t *info)
         unsigned nr_grp = GetActiveProcessorGroupCount();
         ULONG nr_numa = 0;
         int err = 0;
+
+        compiletime_assert(CacheUnified != cache_unified,
+                           "Cache type definition is not the same as Windows defined");
 
         if (nr_grp == 0) {
                 pr_err("GetActiveProcessorGroupCount() failed\n");
@@ -239,14 +305,14 @@ int sysinfo_init(sys_info_t *info)
                 pr_info("cpu group %d has %u processors\n", i, cpu_cnt);
 
                 grp_info->cpu_cnt = cpu_cnt;
-                grp_info->cpu_mask = calloc(cpu_cnt, sizeof(struct cpu_mask));
+                grp_info->cpu = calloc(cpu_cnt, sizeof(struct cpu_info));
                 grp_info->grp_mask = GENMASK_ULL(cpu_cnt - 1, 0);
-                if (!grp_info->cpu_mask)
+                if (!grp_info->cpu)
                         return -ENOMEM;
 
                 for (size_t j = 0; j < cpu_cnt; j++) {
-                        struct cpu_mask *m = &grp_info->cpu_mask[j];
-                        m->mask = BIT_ULL(j);
+                        struct cpu_info *cpu = &grp_info->cpu[j];
+                        cpu->mask = BIT_ULL(j);
                 }
         }
 
@@ -255,13 +321,19 @@ int sysinfo_init(sys_info_t *info)
 
         for (size_t i = 0; i < info->nr_cpu_grp; i++) {
                 struct cpu_grp_info *grp = &info->cpu_grp[i];
-                pr_raw("CPU GROUP: [%2zu] Mask: [0x%016jx]\n", i, grp->grp_mask);
+                pr_raw("CPU Group: [%2zu] Mask: [0x%016jx]\n", i, grp->grp_mask);
+
+                pr_raw("%-4s %-20s %-20s %-20s", "CPU", "Affinity Mask", "Thread Relation", "L3 Relation");
+                if (info->is_heterogeneous) {
+                        pr_raw(" %-8s", "Class");
+                }
+                pr_raw("\n");
 
                 for (size_t j = 0; j < grp->cpu_cnt; j++) {
-                        struct cpu_mask *m = &grp->cpu_mask[j];
-                        pr_raw("CPU [%2zu] Mask: [0x%016jx] Relation: [0x%016jx]", j, m->mask, m->relation_mask);
+                        struct cpu_info *cpu = &grp->cpu[j];
+                        pr_raw("[%2zu] [0x%016jx] [0x%016jx] [0x%016jx]", j, cpu->mask, cpu->relation_mask, cpu->cache[3]._->relation_mask);
                         if (info->is_heterogeneous) {
-                                pr_raw(" [%s-Core]", m->efficiency_cls ? "P" : "E");
+                                pr_raw(" [%s-Core]", cpu->efficiency_cls ? "P" : "E");
                         }
                         pr_raw("\n");
                 }
@@ -275,7 +347,7 @@ void sysinfo_deinit(sys_info_t *info)
         for (size_t i = 0; i < info->nr_cpu_grp; i++) {
                 struct cpu_grp_info *grp = &info->cpu_grp[i];
 
-                free(grp->cpu_mask);
+                free(grp->cpu);
         }
 
         free(info->cpu_grp);

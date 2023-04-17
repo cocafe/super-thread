@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #include <libjj/jkey.h>
+#include <libjj/malloc.h>
 
 #include "config.h"
 #include "sysinfo.h"
@@ -119,36 +120,32 @@ int usrcfg_root_key_create(jbuf_t *b)
         }
 
         {
-                void *profile_arr = jbuf_grow_arr_open(b, "profiles");
+                void *profile_arr = jbuf_list_arr_open(b, "profiles");
 
-                jbuf_grow_arr_setup(b, profile_arr, (void *)&g_cfg.profiles, &g_cfg.profile_cnt, sizeof(profile_t));
+                jbuf_list_arr_setup(b, profile_arr, &g_cfg.profile_list, sizeof(profile_t), offsetof(profile_t, node), 0, 0);
 
                 void *profile_obj = jbuf_offset_obj_open(b, NULL, 0);
 
-                jbuf_offset_add(b, wstrptr, "name", offsetof(profile_t, name));
+                jbuf_offset_strbuf_add(b, "name", offsetof(profile_t, name), sizeof(((profile_t *)(0))->name));
                 jbuf_offset_add(b, bool, "enabled", offsetof(profile_t, enabled));
 
                 {
-                        void *id_arr = jbuf_grow_arr_open(b, "identity");
+                        void *id_arr = jbuf_list_arr_open(b, "identity");
 
-                        jbuf_offset_grow_arr_setup(b,
-                                                   id_arr,
-                                                   offsetof(profile_t, id),
-                                                   offsetof(profile_t, id_cnt),
-                                                   sizeof(struct proc_identity));
+                        jbuf_offset_list_arr_setup(b, id_arr, offsetof(profile_t, id_list), sizeof(struct proc_identity), offsetof(struct proc_identity, node), 0, 0);
 
                         {
                                 void *id_obj = jbuf_offset_obj_open(b, NULL, 0);
 
                                 jbuf_offset_strval_add(b, "type", offsetof(struct proc_identity, type), cfg_identity_type_strs, NUM_PROC_ID_TYPES);
                                 jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
-                                jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
+                                jbuf_offset_strbuf_add(b, "value", offsetof(struct proc_identity, value), sizeof(((proc_id_t *)(0))->value));
 
                                 {
                                         void *cmdl_obj = jbuf_offset_objptr_open(b, "cmdline", sizeof(struct proc_identity), offsetof(struct proc_identity, cmdl));
 
                                         jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
-                                        jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
+                                        jbuf_offset_strbuf_add(b, "value", offsetof(struct proc_identity, value), sizeof(((proc_id_t *)(0))->value));
 
                                         jbuf_obj_close(b, cmdl_obj);
                                 }
@@ -157,7 +154,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                                         void *hdl_obj = jbuf_offset_objptr_open(b, "file_handle", sizeof(struct proc_identity), offsetof(struct proc_identity, file_hdl));
 
                                         jbuf_offset_strval_add(b, "filter", offsetof(struct proc_identity, filter), cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS);
-                                        jbuf_offset_add(b, wstrptr, "value", offsetof(struct proc_identity, value));
+                                        jbuf_offset_strbuf_add(b, "value", offsetof(struct proc_identity, value), sizeof(((proc_id_t *)(0))->value));
 
                                         jbuf_obj_close(b, hdl_obj);
                                 }
@@ -244,7 +241,7 @@ int profile_validate(profile_t *profile)
         uint32_t avail_node_map = GENMASK(nr_cpu_grp - 1, 0);
 
         if (profile->enabled == 0)
-                pr_info("profile [%ls] is disabled\n", profile->name);
+                pr_info("profile [%s] is disabled\n", profile->name);
 
         if (profile->sched_mode == SUPERVISOR_PROCESSES) {
                 profile->processes.node_map &= avail_node_map;
@@ -254,13 +251,13 @@ int profile_validate(profile_t *profile)
                 case PROC_BALANCE_RAND:
                 case PROC_BALANCE_RR:
                         if (profile->processes.node_map == 0) {
-                                pr_err("profile [%ls] process [node_map] matches none of processor groups on this system\n",
+                                pr_err("profile [%s] process [node_map] matches none of processor groups on this system\n",
                                        profile->name);
                                 return -EINVAL;
                         }
 
                         if (profile->processes.affinity == 0) {
-                                pr_err("profile [%ls] affinity is not set\n", profile->name);
+                                pr_err("profile [%s] affinity is not set\n", profile->name);
                                 return -EINVAL;
                         }
 
@@ -283,13 +280,13 @@ int profile_validate(profile_t *profile)
                 case THRD_BALANCE_NODE_RR:
                 case THRD_BALANCE_CPU_RR:
                         if (profile->threads.node_map == 0) {
-                                pr_err("profile [%ls] thread [node_map] matches none of processor groups on this system\n",
+                                pr_err("profile [%s] thread [node_map] matches none of processor groups on this system\n",
                                        profile->name);
                                 return -EINVAL;
                         }
 
                         if (profile->threads.affinity == 0) {
-                                pr_err("profile [%ls] affinity is not set\n", profile->name);
+                                pr_err("profile [%s] affinity is not set\n", profile->name);
                                 return -EINVAL;
                         }
 
@@ -308,17 +305,139 @@ int profile_validate(profile_t *profile)
         return 0;
 }
 
-int usrcfg_validate(void)
+void __profile_init(profile_t *profile)
 {
-        int err;
+        pthread_mutex_init(&profile->lock, NULL);
+        INIT_HLIST_NODE(&profile->hnode);
+}
 
-        if (g_cfg.profile_cnt == 0) {
-                pr_err("did not define any profiles\n");
-                return -ENODATA;
+int profile_init(profile_t *profile)
+{
+        profile->enabled = 0;
+        INIT_LIST_HEAD(&profile->node);
+        INIT_LIST_HEAD(&profile->id_list);
+        __profile_init(profile);
+
+        return 0;
+}
+
+int profile_deinit(profile_t *profile)
+{
+        pthread_mutex_destroy(&profile->lock);
+
+        return 0;
+}
+
+void profile_free(profile_t *profile)
+{
+        proc_id_t *t, *s;
+
+        for_each_profile_id_safe(t, s, profile) {
+                free(t);
         }
 
-        for (size_t i = 0; i < g_cfg.profile_cnt; i++) {
-                profile_t *profile = &g_cfg.profiles[i];
+        free(profile);
+}
+
+int profile_try_lock(profile_t *profile)
+{
+        return pthread_mutex_trylock(&profile->lock);
+}
+
+int profile_lock(profile_t *profile)
+{
+        return pthread_mutex_lock(&profile->lock);
+}
+
+int profile_unlock(profile_t *profile)
+{
+        return pthread_mutex_unlock(&profile->lock);
+}
+
+void profile_hash_rebuild(void)
+{
+        profile_t *p, *s;
+
+        pthread_mutex_lock(&g_cfg.profile_hlist.lck);
+
+        memset(g_cfg.profile_hlist.tbl, 0, sizeof(g_cfg.profile_hlist.tbl));
+        hash_init(g_cfg.profile_hlist.tbl);
+
+        for_each_profile_safe(p, s) {
+                if (profile_try_lock(p))
+                        continue;
+
+                INIT_HLIST_NODE(&p->hnode);
+                hash_add(g_cfg.profile_hlist.tbl, &p->hnode, (intptr_t)p);
+
+                profile_unlock(p);
+        }
+
+        pthread_mutex_unlock(&g_cfg.profile_hlist.lck);
+}
+
+// to check profile is deleted or not
+profile_t *profile_hash_get(profile_t *ptr)
+{
+        profile_t *p, *s;
+        int valid = 0;
+
+        pthread_mutex_lock(&g_cfg.profile_hlist.lck);
+
+        hash_for_each_possible_safe(g_cfg.profile_hlist.tbl, p, s, hnode, (intptr_t)ptr) {
+                if (p == ptr) {
+                        valid = 1;
+                        break;
+                }
+        }
+
+        pthread_mutex_unlock(&g_cfg.profile_hlist.lck);
+
+        return valid ? p : NULL;
+}
+
+void profile_hash_del(profile_t *profile)
+{
+        pthread_mutex_lock(&g_cfg.profile_hlist.lck);
+
+        hash_del(&profile->hnode);
+
+        pthread_mutex_unlock(&g_cfg.profile_hlist.lck);
+}
+
+void profiles_add(profile_t *profile)
+{
+        list_add(&profile->node, &g_cfg.profile_list);
+        profile_hash_rebuild();
+}
+
+void profiles_delete(profile_t *profile)
+{
+        list_del(&profile->node);
+        profile_hash_rebuild();
+}
+
+static int profiles_init(void)
+{
+        struct list_head *t;
+
+        list_for_each(t, &g_cfg.profile_list) {
+                __profile_init(container_of(t, profile_t, node));
+        }
+
+        pthread_mutex_init(&g_cfg.profile_hlist.lck, NULL);
+        profile_hash_rebuild();
+
+        return 0;
+}
+
+int usrcfg_validate(void)
+{
+        struct list_head *t;
+        int err;
+
+        list_for_each(t, &g_cfg.profile_list) {
+                profile_t *profile = container_of(t, profile_t, node);
 
                 if ((err = profile_validate(profile)))
                         return err;
@@ -349,28 +468,21 @@ void usrcfg_loglvl_save(void)
 
 int usrcfg_save(void)
 {
-        int err = 0;
-
         usrcfg_loglvl_save();
 
-        return err;
+        return 0;
 }
 
 int usrcfg_apply(void)
 {
-        int err = 0;
-
         usrcfg_loglvl_apply();
-
-        return err;
+        return 0;
 }
 
 int usrcfg_init(void)
 {
         jbuf_t *jbuf = &jbuf_usrcfg;
         int err;
-
-        // TODO: init default config values
 
         if ((err = usrcfg_root_key_create(jbuf)))
                 return err;
@@ -387,8 +499,8 @@ int usrcfg_init(void)
         if ((err = usrcfg_validate()))
                 return err;
 
-        if ((err = usrcfg_apply()))
-                return err;
+        usrcfg_apply();
+        profiles_init();
 
         return 0;
 }

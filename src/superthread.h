@@ -1,7 +1,7 @@
 #ifndef SUPER_THREAD_H_
 #define SUPER_THREAD_H_
 
-#include "tray.h"
+#include "libjj/tray.h"
 #include <libjj/opts.h>
 
 extern struct tray g_tray;

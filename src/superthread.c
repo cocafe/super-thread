@@ -6,7 +6,8 @@
 #include <libjj/logging.h>
 #include <libjj/opts.h>
 
-#include "tray.h"
+#include "gui.h"
+#include "libjj/tray.h"
 #include "config.h"
 #include "supervisor.h"
 #include "superthread.h"
@@ -18,7 +19,7 @@ struct config g_cfg = {
         .json_path = JSON_CFG_PATH_DEF,
 };
 
-struct tray_menu *g_profile_menu;
+//struct tray_menu *g_profile_menu;
 uint32_t g_should_exit;
 jbuf_t jbuf_usrcfg;
 
@@ -147,16 +148,17 @@ static void save_click(struct tray_menu *m)
         pr_raw("saved json config: %s\n", path);
 }
 
-void tray_lbtn_click(struct tray *tray, void *data)
+void tray_lbtn_dbl_click(struct tray *tray, void *data)
 {
+        UNUSED_PARAM(tray);
         UNUSED_PARAM(data);
 
-        if (is_console_hid())
-                console_show(1);
-        else
-                console_hide();
+        gui_profile_wnd_create();
+}
 
-        tray_update_post(tray);
+void profile_edit_click(struct tray_menu *m)
+{
+        gui_profile_wnd_create();
 }
 
 struct tray g_tray = {
@@ -168,7 +170,8 @@ struct tray g_tray = {
                 { .name = L"Trigger Once", .on_click = trigger_click },
                 { .name = L"Pause", .pre_show = pause_update, .on_click = pause_click, .userdata = &g_tray },
                 { .is_separator = 1 },
-                { .name = TRAY_MENU_PROFILES, .disabled = 1, .submenu = NULL },
+                { .name = L"Edit Profiles", .on_click = profile_edit_click },
+                // { .name = TRAY_MENU_PROFILES, .disabled = 1, .submenu = NULL },
                 { .is_separator = 1 },
                 {
                         .name = L"Logging",
@@ -191,8 +194,8 @@ struct tray g_tray = {
                 { .name = L"Quit", .on_click = quit_cb },
                 { .is_end = 1 }
         },
-        .lbtn_click = tray_lbtn_click,
-        .lbtn_dblclick = NULL,
+        .lbtn_click = NULL,
+        .lbtn_dblclick = tray_lbtn_dbl_click,
 };
 
 struct tray_menu *profile_menu_find(struct tray_menu *top_menu)
@@ -302,9 +305,10 @@ static void profile_proc_thread_dump(struct tray_menu *m)
 
         // FIXME: not thread-safe, need lock
 
-        profile_processes_info_dump(&g_sv.proc_selected, profile);
+        proc_entry_list_dump(&g_sv.proc_selected, profile);
 }
 
+#if 0
 static struct tray_menu profile_menu_template[] = {
         { .name = L"Enabled", .pre_show = profile_enabled_update, .on_click = profile_enabled_click },
         { .is_separator = 1 },
@@ -768,6 +772,7 @@ void profile_menu_free(struct tray_menu *menu)
 
         free(menu->submenu);
 }
+#endif
 
 int superthread_tray_init(HINSTANCE ins)
 {
@@ -777,10 +782,10 @@ int superthread_tray_init(HINSTANCE ins)
         if ((err = tray_init(tray, ins)))
                 return err;
 
-        g_profile_menu = profile_menu_find(tray->menu);
+//        g_profile_menu = profile_menu_find(tray->menu);
 
-        if ((err = profile_menu_create(g_profile_menu)))
-                return err;
+//        if ((err = profile_menu_create(g_profile_menu)))
+//                return err;
 
         tray_update_post(tray);
 
@@ -791,7 +796,7 @@ void superthread_tray_deinit(void)
 {
         struct tray *tray = &g_tray;
 
-        profile_menu_free(g_profile_menu);
+//        profile_menu_free(g_profile_menu);
 
         tray_exit(tray);
 }

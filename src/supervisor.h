@@ -18,6 +18,7 @@ typedef struct proc_info proc_info_t;
 typedef struct thrd_entry thrd_entry_t;
 typedef struct supervisor supervisor_t;
 typedef struct supervisor_val supervisor_val_t;
+typedef struct profile profile_t;
 
 struct thrd_entry {
         tommy_node      node;
@@ -48,7 +49,6 @@ struct proc_entry {
         proc_info_t     info;
 
         profile_t      *profile;
-        size_t          profile_idx;
 
         GROUP_AFFINITY  last_aff;
         uint32_t        last_stamp;
@@ -83,7 +83,6 @@ struct supervisor {
 
         tommy_hashtable   proc_selected;
 
-        supervisor_val_t *vals;
         uint32_t          update_stamp;
         uint8_t           paused;
 };
@@ -95,6 +94,6 @@ int supervisor_deinit(supervisor_t *sv);
 int supervisor_run(supervisor_t *sv);
 void supervisor_trigger_once(supervisor_t *sv);
 
-void profile_processes_info_dump(tommy_hashtable *tbl, profile_t *profile);
+void proc_entry_list_dump(tommy_hashtable *tbl, profile_t *profile);
 
 #endif //SUPER_THREAD_SUPERVISOR_H

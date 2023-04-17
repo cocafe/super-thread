@@ -7,11 +7,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 
-//#include <phnt_windows.h>
-//#include <phnt.h>
-
 #include <windows.h>
-#include <windowsx.h>
 #include <winuser.h>
 #include <winnls.h>
 #include <winternl.h>
@@ -20,19 +16,16 @@
 #include <processthreadsapi.h>
 #include <psapi.h>
 
-#include <libgen.h>
-
 #include <tommyds/tommy.h>
 
 #include <libjj/logging.h>
 #include <libjj/malloc.h>
 #include <libjj/utils.h>
 #include <libjj/ffs.h>
+#include <libjj/iconv.h>
 
 #include "config.h"
 #include "sysinfo.h"
-#include "supervisor.h"
-#include "myntapi.h"
 #include "superthread.h"
 
 typedef BOOL (*GetProcessDefaultCpuSetMasks)(HANDLE Process,
@@ -242,7 +235,7 @@ static int system_info_query(void **info, SYSTEM_INFORMATION_CLASS type, size_t 
         unsigned long needed = 0;
         int ret = 0;
 
-        if (info && !(*info)) {
+        if (info && *info) {
                 pr_err("info must be empty\n");
                 return -EINVAL;
         }
@@ -289,7 +282,7 @@ err_free:
  */
 int system_handle_iterate(int (*foreach)(SYSTEM_HANDLE_ENTRY *, va_list arg), ...)
 {
-        SYSTEM_HANDLE_INFORMATION *hinfo;
+        SYSTEM_HANDLE_INFORMATION *hinfo = NULL;
         size_t sz;
         int err;
         va_list ap;
@@ -370,28 +363,21 @@ int is_pid_tracked(tommy_hashtable *tbl, DWORD pid, wchar_t *exe_file)
 
 int is_str_match_id(wchar_t *str, struct proc_identity *id)
 {
-        if (id->filter == STR_FILTER_CONTAIN) {
-                wchar_t *sub_str = id->value;
+        wchar_t val[128] = { 0 };
 
-                if (!sub_str)
-                        return 0;
-
-                if (wcsstr(str, sub_str))
-                        return 1;
-
+        if (is_strptr_not_set(id->value))
                 return 0;
+
+        iconv_utf82wc(id->value, sizeof(id->value), val, sizeof(val));
+
+        if (id->filter == STR_FILTER_CONTAIN) {
+                if (wcsstr(str, val))
+                        return 1;
         }
 
         if (id->filter == STR_FILTER_IS) {
-                wchar_t *to_match = id->value;
-
-                if (!to_match)
-                        return 0;
-
-                if (is_wstr_equal(str, to_match))
+                if (is_wstr_equal(str, val))
                         return 1;
-
-                return 0;
         }
 
         return 0;
@@ -420,15 +406,14 @@ static inline proc_entry_t *proc_entry_alloc(void)
         return calloc(1, sizeof(proc_entry_t));
 }
 
-void proc_entry_init(proc_entry_t *entry, DWORD pid, wchar_t *proc_exe, size_t profile_idx)
+void proc_entry_init(proc_entry_t *entry, DWORD pid, wchar_t *proc_exe, profile_t *profile)
 {
         proc_info_t *info = &entry->info;
 
         entry->is_new = 1;
         entry->last_stamp = 0;
 
-        entry->profile = &g_cfg.profiles[profile_idx];
-        entry->profile_idx = profile_idx;
+        entry->profile = profile;
 
         info->pid = pid;
         wcsncpy(info->name, proc_exe, wcslen(proc_exe)); // check string len?
@@ -450,7 +435,7 @@ void proc_entry_free(proc_entry_t *entry)
         free(entry);
 }
 
-int proc_entry_init_insert(tommy_hashtable *tbl, DWORD pid, wchar_t *exe, size_t profile_idx)
+int proc_entry_init_insert(tommy_hashtable *tbl, DWORD pid, wchar_t *exe, profile_t *profile)
 {
         proc_entry_t *entry = NULL;
 
@@ -460,7 +445,7 @@ int proc_entry_init_insert(tommy_hashtable *tbl, DWORD pid, wchar_t *exe, size_t
                 return -ENOMEM;
         }
 
-        proc_entry_init(entry, pid, exe, profile_idx);
+        proc_entry_init(entry, pid, exe, profile);
         tommy_hashtable_insert(tbl, &entry->node, entry, tommy_inthash_u32(pid));
 
         return 0;
@@ -1062,19 +1047,26 @@ out:
         return matched;
 }
 
-int is_profile_matched(PROCESSENTRY32 *pe32, size_t *profile_idx)
+int is_profile_matched(PROCESSENTRY32 *pe32, profile_t **ret)
 {
-        for (size_t i = 0; i < g_cfg.profile_cnt; i++) {
-                profile_t *profile = &g_cfg.profiles[i];
+        profile_t *p, *s;
+
+        for_each_profile_safe(p, s) {
+                proc_id_t *id;
+
                 int matched = 0;
 
-                if (!profile->enabled)
+                if (profile_try_lock(p)) {
                         continue;
+                }
 
-                for (size_t j = 0; j < profile->id_cnt; j++) {
-                        struct proc_identity *id = &profile->id[j];
+                if (!p->enabled) {
+                        profile_unlock(p);
+                        continue;
+                }
 
-                        switch (profile->id->type) {
+                for_each_profile_id(id, p) {
+                        switch (id->type) {
                         case IDENTITY_PROCESS_EXE:
                                 if (is_process_properties_matched(pe32, id)) {
                                         matched = 1;
@@ -1101,9 +1093,11 @@ int is_profile_matched(PROCESSENTRY32 *pe32, size_t *profile_idx)
                 }
 
 out_matched:
+                profile_unlock(p);
+
                 if (matched) {
-                        if (profile_idx)
-                                *profile_idx = i;
+                        if (ret)
+                                *ret = p;
 
                         return 1;
                 }
@@ -1152,7 +1146,7 @@ int process_list_build(supervisor_t *sv)
         }
 
         do {
-                size_t profile_idx = 0;
+                profile_t *profile = NULL;
 
                 if (process_try_open(&pe32))
                         continue;
@@ -1163,20 +1157,20 @@ int process_list_build(supervisor_t *sv)
                         continue;
                 }
 
-                if (!is_profile_matched(&pe32, &profile_idx)) {
+                if (!is_profile_matched(&pe32, &profile)) {
                         pr_verbose("pid: %lu \"%ls\" did not match any profiles\n",
                                    pe32.th32ProcessID, pe32.szExeFile);
                         continue;
                 }
 
-                pr_rawlvl(INFO, "pid: %lu \"%ls\" new process matched profile \"%ls\"\n",
+                pr_rawlvl(INFO, "pid: %lu \"%ls\" new process matched profile \"%s\"\n",
                           pe32.th32ProcessID, pe32.szExeFile,
-                          g_cfg.profiles[profile_idx].name);
+                          profile->name);
 
                 proc_entry_init_insert(proc_selected,
                                        pe32.th32ProcessID,
                                        pe32.szExeFile,
-                                       profile_idx);
+                                       profile);
         } while (Process32Next(hProcessSnap, &pe32));
 
 out:
@@ -1203,23 +1197,31 @@ void proc_info_msg(int header)
 void proc_entry_dump(proc_entry_t *entry, int ignore_oneshot)
 {
         proc_info_t *info        = &entry->info;
-        profile_t *profile       = &g_cfg.profiles[entry->profile_idx];
+        profile_t *profile       = profile_hash_get(entry->profile);
         uint8_t page_prio        = info->page_prio;
         uint8_t io_prio          = info->io_prio;
         uint8_t prio_boost       = info->prio_boost;
         uint8_t prio_class       = info->prio_class.PriorityClass;
-        wchar_t profile_name[11] = { 0 };
+        char profile_name[11]    = { 0 };
         wchar_t name[18]         = { 0 };
         int curr_grp = info->curr_aff.Group;
 
-        wcsncpy(profile_name, profile->name, WCBUF_LEN(profile_name));
-        profile_name[WCBUF_LEN(profile_name) - 1] = L'\0';
+        if (NULL == profile) {
+                pr_err("profile is not found in hash table\n");
+                return;
+        }
+
+        if (profile_try_lock(profile))
+                return;
+
+        strncpy(profile_name, profile->name, sizeof(profile_name));
+        profile_name[sizeof(profile_name) - 1] = L'\0';
 
         wcsncpy(name, info->name, WCBUF_LEN(name));
         name[WCBUF_LEN(name) - 1] = L'\0';
 
         if (!ignore_oneshot && entry->oneshot) {
-                pr_raw("| %-10ls | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
+                pr_raw("| %-10s | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
                        profile_name,
                        info->pid,
                        name,
@@ -1231,13 +1233,13 @@ void proc_entry_dump(proc_entry_t *entry, int ignore_oneshot)
                        0,
                        0ULL);
 
-                return;
+                goto out;
         }
 
         if (info->is_threaded)
                 curr_grp = entry->last_aff.Group;
 
-        pr_raw("| %-10ls | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
+        pr_raw("| %-10s | %-5zu | %-18ls | %-7s | %-7s | %-6s | %-5d | %-8d | %-4d | 0x%016jx |\n",
                profile_name,
                info->pid,
                name,
@@ -1248,6 +1250,9 @@ void proc_entry_dump(proc_entry_t *entry, int ignore_oneshot)
                info->is_threaded,
                curr_grp,
                info->is_threaded ? 0xdeaddeaddeaddead : info->curr_aff.Mask);
+
+out:
+        profile_unlock(profile);
 }
 
 void proc_hashit_iterate(tommy_hashtable *tbl)
@@ -1562,7 +1567,7 @@ static int processes_sched_rr(supervisor_t *sv, proc_entry_t *proc, HANDLE proce
 {
         profile_t *profile = proc->profile;
         unsigned long node_map = profile->processes.node_map;
-        struct procs_sched *val = &(sv->vals[proc->profile_idx].u.procs_sched);
+        struct procs_sched *val = &(profile->sv.u.procs_sched);
         GROUP_AFFINITY new_aff = { 0 };
         int err;
 
@@ -1589,6 +1594,18 @@ static int processes_sched_node_rand(supervisor_t *sv, proc_entry_t *proc, HANDL
 
 static int supervisor_processes_sched(supervisor_t *sv, proc_entry_t *proc, HANDLE process)
 {
+        profile_t *profile = proc->profile;
+
+        if (profile->processes.node_map == 0) {
+                pr_dbg("node map of profile [%s] is not set\n", profile->name);
+                return 0;
+        }
+
+        if (profile->processes.affinity == 0) {
+                pr_dbg("affinity of profile [%s] is not set\n", profile->name);
+                return 0;
+        }
+
         // DO NOT CHECK ERROR RETURN
         // since there are multiple processes
 
@@ -1618,7 +1635,7 @@ static void thread_node_rr_map_update(supervisor_t *sv, proc_entry_t *proc, GROU
 {
         profile_t *profile = proc->profile;
         unsigned long node_map = profile->threads.node_map;
-        struct thrds_sched *val = &(sv->vals[proc->profile_idx].u.thrds_sched);
+        struct thrds_sched *val = &(profile->sv.u.thrds_sched);
 
         val->node_map_next = node_map_next(val->node_map_next, node_map);
 
@@ -1632,7 +1649,7 @@ static void thread_cpu_rr_map_update(supervisor_t *sv, proc_entry_t *proc, GROUP
         profile_t *profile = proc->profile;
         unsigned long node_map = profile->threads.node_map;
         uint64_t affinity_map = profile->threads.affinity;
-        struct thrds_sched *val = &(sv->vals[proc->profile_idx].u.thrds_sched);
+        struct thrds_sched *val = &(profile->sv.u.thrds_sched);
 
         if (unlikely(val->node_map_next == 0))
                 val->node_map_next = 1;
@@ -1862,6 +1879,18 @@ static void dead_thread_entry_remove(supervisor_t *sv, proc_entry_t *proc_entry)
 
 static int supervisor_threads_sched(supervisor_t *sv, proc_entry_t *proc)
 {
+        profile_t *profile = proc->profile;
+
+        if (profile->threads.node_map == 0) {
+                pr_dbg("node map of profile [%s] is not set\n", profile->name);
+                return 0;
+        }
+
+        if (profile->threads.affinity == 0) {
+                pr_dbg("affinity of profile [%s] is not set\n", profile->name);
+                return 0;
+        }
+
         switch (proc->profile->threads.balance) {
         case THRD_BALANCE_CPU_RR:
                 threads_sched_cpu_rr(sv, proc);
@@ -2150,7 +2179,7 @@ static int process_config_apply(profile_t *profile, proc_entry_t *proc, HANDLE h
         return 0;
 }
 
-static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
+static int __profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
 {
         proc_info_t *info = &proc->info;
         profile_t *profile = proc->profile;
@@ -2262,6 +2291,27 @@ out:
         return err;
 }
 
+static int _profile_settings_apply(supervisor_t *sv, proc_entry_t *proc)
+{
+        profile_t *profile = profile_hash_get(proc->profile);
+        int err;
+
+        if (!profile) {
+                pr_dbg("profile %p is not found in hash table\n", proc->profile);
+                return -ENODATA;
+        }
+
+        if ((err = profile_try_lock(profile))) {
+                pr_dbg("cannot grab profile %s, skipped\n", profile->name);
+                return -EBUSY;
+        }
+
+        err = __profile_settings_apply(sv, proc);
+        profile_unlock(profile);
+
+        return err;
+}
+
 static int profile_settings_apply(supervisor_t *sv)
 {
         tommy_hashtable *tbl = &sv->proc_selected;
@@ -2280,7 +2330,7 @@ static int profile_settings_apply(supervisor_t *sv)
                         tommy_node *next = n->next;
 
                         err = _profile_settings_apply(sv, n->data);
-                        if (err) {
+                        if (err && err != -EBUSY) {
                                 proc_entry_t *proc = n->data;
                                 pr_rawlvl(DEBUG, "pid: %5zu \"%ls\" remove process from list\n",
                                           proc->info.pid, proc->info.name);
@@ -2296,6 +2346,7 @@ static int profile_settings_apply(supervisor_t *sv)
         return 0;
 }
 
+#if 0
 static int process_list_add_by_handle(tommy_hashtable *tbl, SYSTEM_HANDLE_ENTRY *hdl, wchar_t *exe_name)
 {
         profile_t *profile;
@@ -2371,6 +2422,7 @@ int file_handle_search_insert(supervisor_t *sv)
 
         return err;
 }
+#endif
 
 int supervisor_loop(supervisor_t *sv)
 {
@@ -2460,8 +2512,6 @@ int supervisor_run(supervisor_t *sv)
 
 int supervisor_init(supervisor_t *sv)
 {
-        size_t profile_cnt = g_cfg.profile_cnt;
-
         srand(time(NULL));
 
         krnl_dll = LoadLibrary(L"kernel32.dll");
@@ -2481,15 +2531,6 @@ int supervisor_init(supervisor_t *sv)
         pthread_mutex_init(&sv->trigger_lck, NULL);
         tommy_hashtable_init(&sv->proc_selected, PROC_HASH_TBL_BUCKET);
 
-        sv->vals = NULL;
-        if (profile_cnt) {
-                sv->vals = calloc(profile_cnt, sizeof(supervisor_val_t));
-                if (!sv->vals) {
-                        pr_err("failed to allocate memory\n");
-                        return -ENOMEM;
-                }
-        }
-
         return 0;
 }
 
@@ -2504,9 +2545,6 @@ int supervisor_deinit(supervisor_t *sv)
 
         if (sv->tid_worker)
                 pthread_join(sv->tid_worker, NULL);
-
-        if (sv->vals)
-                free(sv->vals);
 
         tommy_hashtable_foreach(&sv->proc_selected, proc_selected_free);
         tommy_hashtable_done(&sv->proc_selected);
@@ -2654,7 +2692,7 @@ void profile_proc_info_dump_cb(proc_entry_t *proc, va_list ap)
         process_info_dump(proc);
 }
 
-void profile_processes_info_dump(tommy_hashtable *tbl, profile_t *profile)
+void proc_entry_list_dump(tommy_hashtable *tbl, profile_t *profile)
 {
         proc_entry_for_each(tbl, profile_proc_info_dump_cb, profile);
 }

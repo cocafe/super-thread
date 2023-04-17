@@ -13,6 +13,7 @@
 #include <libjj/utils.h>
 #include <libjj/malloc.h>
 
+#include "gui.h"
 #include "config.h"
 #include "sysinfo.h"
 #include "supervisor.h"
@@ -109,6 +110,8 @@ static BOOL HandlerRoutine(DWORD dwCtrlType)
         return TRUE; // FALSE will pass event to next signal handler
 };
 
+extern BOOL SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT value);
+
 int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                     LPWSTR cmdline, int cmdshow)
 {
@@ -121,13 +124,15 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
         setbuf(stdout, NULL);
 
         heap_init();
-        SetProcessDPIAware();
+
+        // this equals "System(enhanced)" in compatibility setting
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
+
+        console_alloc_set(1);
 
         if ((err = lopts_parse(__argc, __wargv, NULL))) {
                 goto out;
         }
-
-        console_alloc_set(1);
 
         if ((err = logging_init()))
                 goto out;
@@ -150,6 +155,8 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                 mb_err("failed to load config: \"%s\"", g_cfg.json_path);
                 goto exit_sysinfo;
         }
+
+        gui_init();
 
         if (!g_console_show)
                 console_hide();
@@ -180,9 +187,14 @@ int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
 
         wnd_msg_process(1);
 
+        if (profile_wnd_tid)
+                pthread_join(profile_wnd_tid, NULL);
+
         supervisor_deinit(&g_sv);
 
         superthread_tray_deinit();
+
+        gui_deinit();
 
 exit_usrcfg:
         usrcfg_deinit();
