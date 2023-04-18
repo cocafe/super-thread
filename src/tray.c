@@ -218,7 +218,8 @@ struct tray g_tray = {
         .lbtn_dblclick = tray_lbtn_dbl_click,
 };
 
-struct tray_menu *profile_menu_find(struct tray_menu *top_menu)
+#if 0
+static struct tray_menu *profile_menu_find(struct tray_menu *top_menu)
 {
         struct tray_menu *m = top_menu;
         int found = 0;
@@ -328,7 +329,6 @@ static void profile_proc_thread_dump(struct tray_menu *m)
         proc_entry_list_dump(&g_sv.proc_selected, profile);
 }
 
-#if 0
 static struct tray_menu profile_menu_template[] = {
         { .name = L"Enabled", .pre_show = profile_enabled_update, .on_click = profile_enabled_click },
         { .is_separator = 1 },
