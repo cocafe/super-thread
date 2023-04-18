@@ -183,6 +183,7 @@ int usrcfg_root_key_create(jbuf_t *b)
                         jbuf_offset_strval_add(b, "prio_boost", offsetof(struct proc_cfg, prio_boost), cfg_tristate_strs, NUM_TRISTATE_VALS);
                         jbuf_offset_strval_add(b, "io_prio", offsetof(struct proc_cfg, io_prio), cfg_io_prio_strs, NUM_IO_PRIOS);
                         jbuf_offset_strval_add(b, "page_prio", offsetof(struct proc_cfg, page_prio), cfg_page_prio_strs, NUM_PAGE_PRIOS);
+                        jbuf_offset_strval_add(b, "throttle", offsetof(struct proc_cfg, power_throttle), cfg_tristate_strs, NUM_TRISTATE_VALS);
 
                         jbuf_obj_close(b, process_cfg);
                 }

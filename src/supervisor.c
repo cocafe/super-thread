@@ -1394,6 +1394,50 @@ static int profile_proc_page_prio_set(profile_t *profile, proc_entry_t *entry, H
         return process_page_prio_set(process, page_prio);
 }
 
+static int process_efficiency_mode_set(HANDLE process, int enable)
+{
+        PROCESS_POWER_THROTTLING_STATE PowerThrottling = { 0 };
+        int ret;
+
+        PowerThrottling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+        PowerThrottling.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+
+        if (!enable) {
+                PowerThrottling.StateMask = 0;
+        } else if (enable > 0) {
+                PowerThrottling.StateMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+        } else {
+                // let system manage
+                PowerThrottling.ControlMask = 0;
+                PowerThrottling.StateMask = 0;
+        }
+
+        ret = SetProcessInformation(process,
+                                    ProcessPowerThrottling,
+                                    &PowerThrottling,
+                                    sizeof(PowerThrottling));
+        if (!ret) {
+                pr_getlasterr("SetProcessInformation");
+        }
+
+        return ret ? 0 : -EFAULT;
+}
+
+static int profile_proc_throttle_set(profile_t *profile, proc_entry_t *entry, HANDLE process)
+{
+        uint32_t throttle = profile->proc_cfg.power_throttle;
+
+        if (throttle >= NUM_TRISTATE_VALS)
+                return -EINVAL;
+
+        if (throttle == LEAVE_AS_IS)
+                return 0;
+
+        process_efficiency_mode_set(process, throttle == STRVAL_ENABLED ? 1 : 0);
+
+        return 0;
+}
+
 static void affinity_mask_limit(GROUP_AFFINITY *new_aff, uint64_t affinity, uint32_t group)
 {
         struct cpu_grp_info *cpu_grp = &g_sys_info.cpu_grp[group];
@@ -2172,6 +2216,9 @@ static int process_config_apply(profile_t *profile, proc_entry_t *proc, HANDLE h
                 return err;
 
         if ((err = profile_proc_page_prio_set(profile, proc, hdl)))
+                return err;
+
+        if ((err = profile_proc_throttle_set(profile, proc, hdl)))
                 return err;
 
         profile_thread_settings_apply(proc);
