@@ -57,6 +57,7 @@ struct profile_wnd_data {
         } profile;
 };
 
+static HANDLE hFont = INVALID_HANDLE_VALUE;
 static float widget_h = 40.0f;
 pthread_t profile_wnd_tid;
 
@@ -1088,10 +1089,24 @@ int gui_profile_wnd_create(void)
 
 void gui_init(void)
 {
+        HINSTANCE hInstance = GetModuleHandle(NULL);
+        HRSRC hFntRes = FindResource(hInstance, MAKEINTRESOURCE(IDI_FONT_BUILTIN), L"BINARY");
+        if (hFntRes) {
+                HGLOBAL hFntMem = LoadResource(hInstance, hFntRes);
+                if (hFntMem) {
+                        void *FntData = LockResource(hFntMem);
+                        DWORD nFonts = 0, len = SizeofResource(hInstance, hFntRes);
+                        hFont = AddFontMemResourceEx(FntData, len, NULL, &nFonts);
+                }
+        }
+
         nkgdi_window_init();
 }
 
 void gui_deinit(void)
 {
+        if (hFont != INVALID_HANDLE_VALUE)
+                RemoveFontMemResourceEx(hFont);
+
         nkgdi_window_shutdown();
 }

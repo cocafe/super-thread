@@ -3,3 +3,4 @@
 1 					24 				"app.manifest"
 101		              		ICON				"app.ico"
 102                                     ICON                            "app_disabled.ico"
+200                                     BINARY                          "RobotoMono-VariableFont_wght.ttf"
