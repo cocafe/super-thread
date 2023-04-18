@@ -20,13 +20,8 @@ struct config g_cfg = {
 };
 
 //struct tray_menu *g_profile_menu;
-uint32_t g_should_exit;
-jbuf_t jbuf_usrcfg;
 
 lsopt_strbuf(c, json_path, g_cfg.json_path, sizeof(g_cfg.json_path), "JSON config path");
-
-static pthread_mutex_t save_lck = PTHREAD_MUTEX_INITIALIZER;
-uint32_t in_saving;
 
 void superthread_quit(void)
 {
@@ -34,10 +29,6 @@ void superthread_quit(void)
         g_should_exit = 1;
         PostQuitMessage(0);
 }
-
-//
-// tray gui
-//
 
 static void quit_cb(struct tray_menu *m) {
         UNUSED_PARAM(m);
@@ -135,37 +126,9 @@ static void loglvl_update(struct tray_menu *m)
 
 static void save_click(struct tray_menu *m)
 {
-        char *path = g_cfg.json_path;
-        profile_t *p, *s;
         UNUSED_PARAM(m);
 
-        pthread_mutex_lock(&save_lck);
-
-        WRITE_ONCE(in_saving, 1);
-
-        if (usrcfg_write()) {
-                mb_err("usrcfg_write() failed\n");
-                return;
-        }
-
-        for_each_profile_safe(p, s) {
-                profile_lock(p);
-        }
-
-        if (jbuf_save(&jbuf_usrcfg, path)) {
-                mb_err("failed to save json to \"%s\"", path);
-                return;
-        }
-
-        for_each_profile_safe(p, s) {
-                profile_unlock(p);
-        }
-
-        pr_raw("saved json config: %s\n", path);
-
-        WRITE_ONCE(in_saving, 0);
-
-        pthread_mutex_unlock(&save_lck);
+        usrcfg_save();
 }
 
 void tray_lbtn_dbl_click(struct tray *tray, void *data)

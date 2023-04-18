@@ -85,6 +85,9 @@ const char *cfg_tristate_strs[] = {
         [STRVAL_DISABLED]               = "disabled",
 };
 
+static pthread_mutex_t save_lck = PTHREAD_MUTEX_INITIALIZER;
+uint32_t in_saving;
+
 int usrcfg_root_key_create(jbuf_t *b)
 {
         void *root;
@@ -281,6 +284,47 @@ int usrcfg_apply(void)
 {
         usrcfg_loglvl_apply();
         return 0;
+}
+
+int usrcfg_save(void)
+{
+        char *path = g_cfg.json_path;
+        profile_t *p, *s;
+        int err = 0;
+
+        if ((err = pthread_mutex_lock(&save_lck))) {
+                pr_err("failed to grab save_lck, err = %d %s\n", err, strerror(err));
+                return err;
+        }
+
+        WRITE_ONCE(in_saving, 1);
+
+        if (usrcfg_write()) {
+                mb_err("usrcfg_write() failed\n");
+                err = -EINVAL;
+                goto unlock;
+        }
+
+        for_each_profile_safe(p, s) {
+                profile_lock(p);
+        }
+
+        if ((err = jbuf_save(&jbuf_usrcfg, path))) {
+                mb_err("failed to save json to \"%s\", err = %d", path, err);
+        } else {
+                pr_raw("saved json config: %s\n", path);
+        }
+
+        for_each_profile_safe(p, s) {
+                profile_unlock(p);
+        }
+
+unlock:
+        WRITE_ONCE(in_saving, 0);
+
+        pthread_mutex_unlock(&save_lck);
+
+        return err;
 }
 
 int usrcfg_init(void)

@@ -132,5 +132,6 @@ int usrcfg_init(void);
 int usrcfg_deinit(void);
 int usrcfg_apply(void);
 int usrcfg_write(void);
+int usrcfg_save(void);
 
 #endif // SUPER_THREAD_CONFIG_H
