@@ -119,8 +119,6 @@ static BOOL HandlerRoutine(DWORD dwCtrlType)
         return TRUE; // FALSE will pass event to next signal handler
 };
 
-extern BOOL SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT value);
-
 int WINAPI wWinMain(HINSTANCE ins, HINSTANCE prev_ins,
                     LPWSTR cmdline, int cmdshow)
 {
