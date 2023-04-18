@@ -451,12 +451,21 @@ out:
 
 int wnd_identity_process_list_select(struct nk_context *ctx, struct profile_wnd_data *data)
 {
+        static char filter_buf[128] = { 0 };
+        static int filter_len = 0;
+        char _filter[128];
         char buf[256 + 8] = { 0 };
         int ret = 0;
 
         if (!data->proc_list_info && !data->proc_list_sel) {
                 wnd_identity_proc_list_build(data);
         }
+
+        nk_layout_row_dynamic(ctx, widget_h, 1);
+        nk_edit_string(ctx, NK_EDIT_FIELD, filter_buf, &filter_len, sizeof(buf), nk_filter_default);
+
+        snprintf(_filter, sizeof(_filter), "%.*s", filter_len, filter_buf);
+        _filter[sizeof(_filter) - 1] = '\0';
 
         nk_layout_row_dynamic(ctx, 12 * widget_h, 1);
 
@@ -465,7 +474,10 @@ int wnd_identity_process_list_select(struct nk_context *ctx, struct profile_wnd_
 
                 for (size_t i = 0; i < data->proc_list_cnt; ++i) {
                         snprintf(buf, sizeof(buf),"%s (pid: %d)", data->proc_list_info[i].name, data->proc_list_info[i].pid);
-                        nk_selectable_label(ctx, buf, NK_TEXT_LEFT, &data->proc_list_sel[i]);
+
+                        if (!is_strptr_set(filter_buf) || strstr(data->proc_list_info[i].name, _filter) ) {
+                                nk_selectable_label(ctx, buf, NK_TEXT_LEFT, &data->proc_list_sel[i]);
+                        }
                 }
 
                 nk_group_end(ctx);
@@ -486,6 +498,8 @@ int wnd_identity_process_list_select(struct nk_context *ctx, struct profile_wnd_
         return 0;
 
 close:
+        filter_len = 0;
+        memset(filter_buf, '\0', sizeof(filter_buf));
         data->proc_sel_popup = 0;
         nk_popup_close(ctx);
 
@@ -604,7 +618,7 @@ int wnd_profile_identity_draw(struct nk_context *ctx, struct profile_wnd_data *d
                 if (nk_popup_begin(ctx, NK_POPUP_STATIC,
                                    "Select Processes...",
                                    NK_WINDOW_CLOSABLE,
-                                   nk_rect(20, 20, 700, 15 * widget_h))) {
+                                   nk_rect(20, 20, 700, 16 * widget_h))) {
                         if (wnd_identity_process_list_select(ctx, data)) {
                                 wnd_identity_process_list_add(data, profile);
                         }
