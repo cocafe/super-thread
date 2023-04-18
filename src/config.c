@@ -456,7 +456,7 @@ void usrcfg_loglvl_apply(void)
         }
 }
 
-void usrcfg_loglvl_save(void)
+void usrcfg_loglvl_write(void)
 {
         for (size_t i = 0; i < NUM_LOG_LEVELS; i++) {
                 if (g_logprint_level & BIT(i))
@@ -466,9 +466,9 @@ void usrcfg_loglvl_save(void)
         }
 }
 
-int usrcfg_save(void)
+int usrcfg_write(void)
 {
-        usrcfg_loglvl_save();
+        usrcfg_loglvl_write();
 
         return 0;
 }

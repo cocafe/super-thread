@@ -7,6 +7,7 @@
 extern struct tray g_tray;
 extern uint32_t g_should_exit;
 extern jbuf_t jbuf_usrcfg;
+extern uint32_t in_saving;
 
 int superthread_tray_init(HINSTANCE ins);
 void superthread_tray_deinit(void);

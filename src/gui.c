@@ -181,7 +181,7 @@ int profile_id_filter_draw(struct nk_context *ctx, proc_id_t *id, const char *na
 
 int wnd_profile_reload(struct profile_wnd_data *data)
 {
-        int i = 0;
+        int i = 0, err;
         profile_t *t;
 
         data->profile.cnt = 0;
@@ -192,7 +192,10 @@ int wnd_profile_reload(struct profile_wnd_data *data)
                                 profile_unlock(data->profile.t);
 
                         data->profile.t = t;
-                        profile_lock(t);
+                        if ((err = profile_lock(t))) {
+                                pr_err("failed to grab profile %d, err = %d %s\n", i, err, strerror(err));
+                                return 1;
+                        }
                 }
 
                 data->profile.cnt++;
@@ -213,9 +216,9 @@ int wnd_profile_menubar_draw(struct nk_context *ctx)
         if (nk_menu_begin_label(ctx, "File", NK_TEXT_ALIGN_LEFT, nk_vec2(120, 200))) {
                 nk_layout_row_dynamic(ctx, widget_h, 1);
 
-//                if (nk_menu_item_label(ctx, "Save", NK_TEXT_ALIGN_LEFT)) {
-//                        // TODO: trigger save
-//                }
+                if (nk_menu_item_label(ctx, "Save", NK_TEXT_ALIGN_LEFT)) {
+                        // TODO: trigger save
+                }
 
                 if (nk_menu_item_label(ctx, "Close", NK_TEXT_ALIGN_LEFT)) {
                         return 1;
@@ -238,7 +241,8 @@ void wnd_profile_delete(struct profile_wnd_data *data)
         profiles_delete(p);
         profile_free(p);
         pthread_mutex_unlock(&lck);
-        pthread_mutex_destroy(&lck);
+        if (pthread_mutex_destroy(&lck))
+                pr_err("failed to destroy lock\n");
 
         data->profile.sel = new_sel < 0 ? 0 : new_sel;
         data->profile.t = NULL;
@@ -259,7 +263,9 @@ int wnd_profile_add(struct profile_wnd_data *data)
         n->threads.affinity = UINT64_MAX;
         snprintf(n->name, sizeof(n->name), "new profile");
 
-        profile_unlock(p);
+        if (p)
+                profile_unlock(p);
+
         profiles_add(n);
 
         data->profile.t = NULL;
@@ -885,7 +891,6 @@ void wnd_supervisor_affinity_draw(struct nk_context *ctx, int *popup, struct sup
 
                                 nk_layout_row_dynamic(ctx, widget_h, 1);
                                 if (nk_button_label(ctx, "OK")) {
-                                        // TODO: limit mask ...
                                         buflen = -1;
                                         *popup = 0;
 
@@ -952,8 +957,19 @@ int wnd_profile_on_draw(struct nkgdi_window *wnd, struct nk_context *ctx)
         struct profile_wnd_data *data = nkgdi_window_userdata_get(wnd);
         profile_t *selected;
 
+        if (READ_ONCE(in_saving)) {
+                if (data->profile.t) {
+                        profile_unlock(data->profile.t);
+                        data->profile.t = NULL;
+                        data->ready = 0;
+                }
+
+                return 1;
+        }
+
         if (!data->ready) {
-                wnd_profile_reload(data);
+                if (wnd_profile_reload(data))
+                        return 1;
         }
 
         if (g_should_exit)

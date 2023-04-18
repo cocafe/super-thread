@@ -209,7 +209,7 @@ void profiles_delete(profile_t *profile);
 int usrcfg_init(void);
 int usrcfg_deinit(void);
 int usrcfg_apply(void);
-int usrcfg_save(void);
+int usrcfg_write(void);
 
 #define for_each_profile(t) list_for_each_entry((t), &g_cfg.profile_list, node)
 #define for_each_profile_safe(t, s) list_for_each_entry_safe((t), (s), &g_cfg.profile_list, node)
