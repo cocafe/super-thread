@@ -39,6 +39,8 @@ set(SOURCE_FILES
     src/main.c
     src/config.c
     src/config.h
+    src/profile.c
+    src/profile.h
     src/supervisor.c
     src/supervisor.h
     src/myntapi.h

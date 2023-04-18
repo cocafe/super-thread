@@ -20,6 +20,12 @@ typedef struct supervisor supervisor_t;
 typedef struct supervisor_val supervisor_val_t;
 typedef struct profile profile_t;
 
+struct supervisor_cfg {
+        uint32_t node_map;
+        uint32_t balance;
+        uint64_t affinity;
+};
+
 struct thrd_entry {
         tommy_node      node;
 
