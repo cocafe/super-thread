@@ -61,7 +61,7 @@ int profile_validate(profile_t *profile)
         return 0;
 }
 
-void __profile_init(profile_t *profile)
+static void __profile_init(profile_t *profile)
 {
         pthread_mutex_init(&profile->lock, NULL);
         INIT_HLIST_NODE(&profile->hnode);
