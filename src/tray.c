@@ -5,30 +5,16 @@
 #include <libjj/utils.h>
 #include <libjj/logging.h>
 #include <libjj/opts.h>
+#include <libjj/tray.h>
 
 #include "gui.h"
-#include "libjj/tray.h"
 #include "config.h"
 #include "supervisor.h"
 #include "superthread.h"
 
 #define TRAY_MENU_PROFILES                      L"Profile"
 
-struct config g_cfg = {
-        .sampling_sec = SAMPLING_SEC_DEF,
-        .json_path = JSON_CFG_PATH_DEF,
-};
-
 //struct tray_menu *g_profile_menu;
-
-lsopt_strbuf(c, json_path, g_cfg.json_path, sizeof(g_cfg.json_path), "JSON config path");
-
-void superthread_quit(void)
-{
-        supervisor_trigger_once(&g_sv); // to interrupt sleeping
-        g_should_exit = 1;
-        PostQuitMessage(0);
-}
 
 static void quit_cb(struct tray_menu *m) {
         UNUSED_PARAM(m);
@@ -778,10 +764,6 @@ int superthread_tray_init(HINSTANCE ins)
 void superthread_tray_deinit(void)
 {
         struct tray *tray = &g_tray;
-
-        // sync, in case
-        pthread_mutex_lock(&save_lck);
-        pthread_mutex_unlock(&save_lck);
 
 //        profile_menu_free(g_profile_menu);
 

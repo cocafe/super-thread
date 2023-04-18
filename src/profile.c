@@ -63,7 +63,9 @@ int profile_validate(profile_t *profile)
 
 static void __profile_init(profile_t *profile)
 {
-        pthread_mutex_init(&profile->lock, NULL);
+        pthread_mutexattr_init(&profile->lockattr);
+        pthread_mutexattr_settype(&profile->lockattr, PTHREAD_MUTEX_RECURSIVE);
+        pthread_mutex_init(&profile->lock, &profile->lockattr);
         INIT_HLIST_NODE(&profile->hnode);
 }
 
@@ -80,6 +82,7 @@ int profile_init(profile_t *profile)
 int profile_deinit(profile_t *profile)
 {
         pthread_mutex_destroy(&profile->lock);
+        pthread_mutexattr_destroy(&profile->lockattr);
 
         return 0;
 }

@@ -19,6 +19,15 @@
 #include "supervisor.h"
 #include "superthread.h"
 
+uint32_t g_should_exit;
+
+void superthread_quit(void)
+{
+        supervisor_trigger_once(&g_sv); // to interrupt sleeping
+        g_should_exit = 1;
+        PostQuitMessage(0);
+}
+
 static int __privilege_get(const wchar_t *priv_name)
 {
         HANDLE token;

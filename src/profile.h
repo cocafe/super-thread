@@ -58,6 +58,7 @@ struct profile {
         supervisor_val_t        sv;
 
         pthread_mutex_t         lock;
+        pthread_mutexattr_t     lockattr;
 };
 
 #define for_each_profile(t) list_for_each_entry((t), &g_cfg.profile_list, node)

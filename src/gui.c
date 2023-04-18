@@ -217,7 +217,7 @@ int wnd_profile_menubar_draw(struct nk_context *ctx)
                 nk_layout_row_dynamic(ctx, widget_h, 1);
 
                 if (nk_menu_item_label(ctx, "Save", NK_TEXT_ALIGN_LEFT)) {
-                        // TODO: trigger save
+                        usrcfg_save();
                 }
 
                 if (nk_menu_item_label(ctx, "Close", NK_TEXT_ALIGN_LEFT)) {
@@ -236,17 +236,13 @@ void wnd_profile_delete(struct profile_wnd_data *data)
 {
         int new_sel = data->profile.sel - 1;
         profile_t *p = data->profile.t;
-        int err;
 
         if (!p)
                 return;
 
         profile_list_delete(p);
         profile_unlock(p);
-
-        if ((err = pthread_mutex_destroy(&p->lock)))
-                pr_err("failed to destroy lock, err = %d %s\n", err, strerror(err));
-
+        profile_deinit(p);
         profile_free(p);
 
         data->profile.sel = new_sel < 0 ? 0 : new_sel;

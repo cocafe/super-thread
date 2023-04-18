@@ -85,8 +85,16 @@ const char *cfg_tristate_strs[] = {
         [STRVAL_DISABLED]               = "disabled",
 };
 
+struct config g_cfg = {
+        .sampling_sec = SAMPLING_SEC_DEF,
+        .json_path = JSON_CFG_PATH_DEF,
+};
+
+lsopt_strbuf(c, json_path, g_cfg.json_path, sizeof(g_cfg.json_path), "JSON config path");
+
 static pthread_mutex_t save_lck = PTHREAD_MUTEX_INITIALIZER;
 uint32_t in_saving;
+jbuf_t jbuf_usrcfg;
 
 int usrcfg_root_key_create(jbuf_t *b)
 {
@@ -355,6 +363,10 @@ int usrcfg_init(void)
 
 int usrcfg_deinit(void)
 {
+        // sync, in case
+        pthread_mutex_lock(&save_lck);
+        pthread_mutex_unlock(&save_lck);
+
         jbuf_deinit(&jbuf_usrcfg);
 
         return 0;
