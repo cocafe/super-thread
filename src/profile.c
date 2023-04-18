@@ -75,6 +75,8 @@ int profile_init(profile_t *profile)
         INIT_LIST_HEAD(&profile->node);
         INIT_LIST_HEAD(&profile->id_list);
         __profile_init(profile);
+        affinity_mask_limit(&profile->processes);
+        affinity_mask_limit(&profile->threads);
 
         return 0;
 }

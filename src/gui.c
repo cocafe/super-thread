@@ -258,11 +258,11 @@ int wnd_profile_add(struct profile_wnd_data *data)
         if (!n)
                 return -ENOMEM;
 
-        profile_init(n);
         n->processes.node_map = 0x01;
         n->processes.affinity = UINT64_MAX;
         n->threads.node_map = 0x01;
         n->threads.affinity = UINT64_MAX;
+        profile_init(n);
         snprintf(n->name, sizeof(n->name), "new profile");
 
         if (p)
