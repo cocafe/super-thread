@@ -66,18 +66,22 @@ struct profile {
 #define for_each_profile_id_safe(t, s, p) list_for_each_entry_safe((t), (s), &((p)->id_list), node)
 
 int profile_validate(profile_t *profile);
+
 int profile_init(profile_t *profile);
+int profile_deinit(profile_t *profile);
+
 int profile_lock(profile_t *profile);
 int profile_try_lock(profile_t *profile);
 int profile_unlock(profile_t *profile);
+
 void profile_free(profile_t *profile);
 
 void profile_hash_rebuild(void);
 void profile_hash_del(profile_t *profile);
 profile_t *profile_hash_get(profile_t *ptr);
 
-void profiles_add(profile_t *profile);
-void profiles_delete(profile_t *profile);
+void profile_list_add(profile_t *profile);
+void profile_list_delete(profile_t *profile);
 
 int loaded_profiles_init(void);
 

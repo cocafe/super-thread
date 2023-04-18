@@ -161,13 +161,13 @@ void profile_hash_del(profile_t *profile)
         pthread_mutex_unlock(&g_cfg.profile_hlist.lck);
 }
 
-void profiles_add(profile_t *profile)
+void profile_list_add(profile_t *profile)
 {
         list_add(&profile->node, &g_cfg.profile_list);
         profile_hash_rebuild();
 }
 
-void profiles_delete(profile_t *profile)
+void profile_list_delete(profile_t *profile)
 {
         list_del(&profile->node);
         profile_hash_rebuild();

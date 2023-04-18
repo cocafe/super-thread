@@ -241,7 +241,7 @@ void wnd_profile_delete(struct profile_wnd_data *data)
         if (!p)
                 return;
 
-        profiles_delete(p);
+        profile_list_delete(p);
         profile_unlock(p);
 
         if ((err = pthread_mutex_destroy(&p->lock)))
@@ -271,7 +271,7 @@ int wnd_profile_add(struct profile_wnd_data *data)
         if (p)
                 profile_unlock(p);
 
-        profiles_add(n);
+        profile_list_add(n);
 
         data->profile.t = NULL;
         data->profile.sel = 0;
