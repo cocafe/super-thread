@@ -45,7 +45,7 @@ set(SOURCE_FILES
     src/sysinfo.c
     src/sysinfo.h
     src/superthread.h
-    src/superthread.c
+    src/tray.c
     src/gui.c
     src/gui.h
     asset/resource.h
