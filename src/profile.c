@@ -9,72 +9,54 @@
 #include "sysinfo.h"
 #include "config.h"
 
-int profile_validate(profile_t *profile)
+static void affinity_mask_limit(struct supervisor_cfg *cfg)
 {
         size_t nr_cpu_grp = g_sys_info.nr_cpu_grp;
+        size_t cpu_cnt = g_sys_info.cpu_grp[0].cpu_cnt;
         uint32_t avail_node_map = GENMASK(nr_cpu_grp - 1, 0);
+        uint32_t avail_affinity_map = GENMASK(cpu_cnt - 1, 0);
 
+        cfg->node_map &= avail_node_map;
+        cfg->affinity &= avail_affinity_map;
+}
+
+int profile_validate(profile_t *profile)
+{
         if (profile->enabled == 0)
                 pr_info("profile [%s] is disabled\n", profile->name);
 
-        if (profile->sched_mode == SUPERVISOR_PROCESSES) {
-                profile->processes.node_map &= avail_node_map;
+        switch (profile->processes.balance) {
+        case PROC_BALANCE_BY_MAP:
+        case PROC_BALANCE_RAND:
+        case PROC_BALANCE_RR:
+                break;
 
-                switch (profile->processes.balance) {
-                case PROC_BALANCE_BY_MAP:
-                case PROC_BALANCE_RAND:
-                case PROC_BALANCE_RR:
-                        if (profile->processes.node_map == 0) {
-                                pr_err("profile [%s] process [node_map] matches none of processor groups on this system\n",
-                                       profile->name);
-                                return -EINVAL;
-                        }
+        case PROC_BALANCE_ONLOAD:
+                pr_info("onload balance algorithm is not implemented\n");
+                break;
 
-                        if (profile->processes.affinity == 0) {
-                                pr_err("profile [%s] affinity is not set\n", profile->name);
-                                return -EINVAL;
-                        }
-
-                        break;
-
-                case PROC_BALANCE_ONLOAD:
-                        pr_info("onload balance algorithm is not implemented\n");
-                        break;
-
-                default:
-                        pr_err("invalid balance mode\n");
-                        return -EINVAL;
-                }
-
-        } else if (profile->sched_mode == SUPERVISOR_THREADS) {
-                profile->threads.node_map &= avail_node_map;
-
-                switch (profile->threads.balance) {
-                case THRD_BALANCE_NODE_RAND:
-                case THRD_BALANCE_NODE_RR:
-                case THRD_BALANCE_CPU_RR:
-                        if (profile->threads.node_map == 0) {
-                                pr_err("profile [%s] thread [node_map] matches none of processor groups on this system\n",
-                                       profile->name);
-                                return -EINVAL;
-                        }
-
-                        if (profile->threads.affinity == 0) {
-                                pr_err("profile [%s] affinity is not set\n", profile->name);
-                                return -EINVAL;
-                        }
-
-                        break;
-
-                case THRD_BALANCE_ONLOAD:
-                        pr_info("algorithm is not implemented\n");
-                        break;
-
-                default:
-                        pr_err("invalid balance mode\n");
-                        return -EINVAL;
-                }
+        default:
+                pr_err("invalid balance mode\n");
+                return -EINVAL;
         }
+
+        switch (profile->threads.balance) {
+        case THRD_BALANCE_NODE_RAND:
+        case THRD_BALANCE_NODE_RR:
+        case THRD_BALANCE_CPU_RR:
+                break;
+
+        case THRD_BALANCE_ONLOAD:
+                pr_info("algorithm is not implemented\n");
+                break;
+
+        default:
+                pr_err("invalid balance mode\n");
+                return -EINVAL;
+        }
+
+        affinity_mask_limit(&profile->processes);
+        affinity_mask_limit(&profile->threads);
 
         return 0;
 }
