@@ -236,13 +236,18 @@ void wnd_profile_delete(struct profile_wnd_data *data)
 {
         int new_sel = data->profile.sel - 1;
         profile_t *p = data->profile.t;
-        pthread_mutex_t lck = p->lock;
+        int err;
+
+        if (!p)
+                return;
 
         profiles_delete(p);
+        profile_unlock(p);
+
+        if ((err = pthread_mutex_destroy(&p->lock)))
+                pr_err("failed to destroy lock, err = %d %s\n", err, strerror(err));
+
         profile_free(p);
-        pthread_mutex_unlock(&lck);
-        if (pthread_mutex_destroy(&lck))
-                pr_err("failed to destroy lock\n");
 
         data->profile.sel = new_sel < 0 ? 0 : new_sel;
         data->profile.t = NULL;
