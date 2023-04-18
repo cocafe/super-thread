@@ -932,8 +932,7 @@ void wnd_supervisor_balance_draw(struct nk_context *ctx, struct supervisor_cfg *
 
 int wnd_profile_supervisor_draw(struct nk_context *ctx, struct profile_wnd_data *data, profile_t *profile)
 {
-        nk_layout_row_dynamic(ctx, widget_h, 3);
-        nk_checkbox_label(ctx, "Enabled", (int *)&profile->enabled);
+        nk_layout_row_dynamic(ctx, widget_h, 2);
         nk_checkbox_label(ctx, "OneShot", (int *)&profile->oneshot);
         nk_checkbox_label(ctx, "Always Set", (int *)&profile->always_set);
 
@@ -1000,6 +999,12 @@ int wnd_profile_on_draw(struct nkgdi_window *wnd, struct nk_context *ctx)
 
         if (selected == NULL)
                 return 1;
+
+        nk_layout_row_begin(ctx, NK_DYNAMIC, widget_h, 2);
+        nk_layout_row_push(ctx, 0.6f);
+        nk_label(ctx, "Enabled:", NK_TEXT_LEFT);
+        nk_layout_row_push(ctx, 0.4f);
+        nk_checkbox_label(ctx, "", (int *)&selected->enabled);
 
         wnd_profile_name_draw(ctx, data, selected);
 
