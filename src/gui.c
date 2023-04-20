@@ -22,6 +22,8 @@
 #define NKGDI_IMPLEMENT_WINDOW
 #include <nuklear/nuklear_gdiwnd.h>
 
+#include <nuklear/nuklear_jj.h>
+
 #include <libjj/ffs.h>
 #include <libjj/iconv.h>
 #include <libjj/logging.h>
@@ -59,7 +61,25 @@ struct profile_wnd_data {
 
 static HANDLE hFont = INVALID_HANDLE_VALUE;
 static float widget_h = 40.0f;
+static int nk_theme = THEME_DARK;
 pthread_t profile_wnd_tid;
+
+static const opt_val_t nk_theme_strs[] = {
+        [THEME_DEFAULT] = { "default", NULL },
+        [THEME_BLACK] = { "black", NULL },
+        [THEME_WHITE] = { "white", NULL },
+        [THEME_RED] = { "red", NULL },
+        [THEME_BLUE] = { "blue", NULL },
+        [THEME_GREEN] = { "green", NULL },
+        [THEME_PURPLE] = { "purple", NULL },
+        [THEME_BROWN] = { "brown", NULL },
+        [THEME_DRACULA] = { "dracula", NULL },
+        [THEME_DARK] = { "dark", NULL },
+        [THEME_GRUVBOX] = {"gruvbox", NULL },
+        { NULL, NULL },
+};
+
+lopt_optval(nk_theme, &nk_theme, sizeof(nk_theme), nk_theme_strs, "GUI Theme");
 
 static inline int list_is_null(const struct list_head *head)
 {
@@ -157,7 +177,6 @@ int wnd_cfg_on_draw(struct nkgdi_window *wnd, struct nk_context *ctx)
 
 int profile_id_filter_draw(struct nk_context *ctx, proc_id_t *id, const char *name)
 {
-        char buf[PROC_ID_VALUE_LEN] = { 0 };
         int buf_len = strlen(id->value);
 
         nk_layout_row_dynamic(ctx, widget_h, 3);
@@ -165,8 +184,10 @@ int profile_id_filter_draw(struct nk_context *ctx, proc_id_t *id, const char *na
         id->filter = nk_combo(ctx, cfg_identity_filter_strs, NUM_PROC_ID_STR_FILTERS, id->filter, widget_h, nk_vec2(200, 200));
         nk_edit_string(ctx, NK_EDIT_FIELD, id->value, &buf_len, sizeof(id->value), nk_filter_default);
 
-        strncpy(buf, id->value, sizeof(id->value));
-        snprintf(id->value, sizeof(id->value), "%.*s", buf_len, buf);
+        if (buf_len >= 0 && (size_t)buf_len < sizeof(id->value))
+                id->value[buf_len] = '\0';
+
+        id->value[sizeof(id->value) - 1] = '\0';
 
         nk_layout_row_dynamic(ctx, widget_h, 1);
 
@@ -352,21 +373,21 @@ int wnd_profile_selection_draw(struct nk_context *ctx, struct profile_wnd_data *
 
 int wnd_profile_name_draw(struct nk_context *ctx, struct profile_wnd_data *data, profile_t *profile)
 {
-        char field_buf[PROFILE_NAME_LEN] = { 0 };
         int field_len;
 
-        strncpy(field_buf, profile->name, sizeof(profile->name));
-        field_len = strlen(field_buf);
+        field_len = strlen(profile->name);
 
         nk_layout_row_begin(ctx, NK_DYNAMIC, widget_h, 2);
         nk_layout_row_push(ctx, 0.6f);
         nk_label(ctx, "Profile Name:", NK_TEXT_LEFT);
         nk_layout_row_push(ctx, 0.4f);
-        nk_edit_string(ctx, NK_EDIT_FIELD, field_buf, &field_len, sizeof(field_buf), nk_filter_default);
+        nk_edit_string(ctx, NK_EDIT_FIELD, profile->name, &field_len, sizeof(profile->name), nk_filter_default);
         nk_layout_row_end(ctx);
 
-        memset(profile->name, '\0', sizeof(profile->name));
-        snprintf(profile->name, sizeof(profile->name), "%.*s", field_len, field_buf);
+        if (field_len >= 0 && (size_t)field_len < sizeof(profile->name))
+                profile->name[field_len] = '\0';
+
+        profile->name[sizeof(profile->name) - 1] = '\0';
 
         return 0;
 }
@@ -452,32 +473,47 @@ out:
 
 int wnd_identity_process_list_select(struct nk_context *ctx, struct profile_wnd_data *data)
 {
-        static char filter_buf[128] = { 0 };
-        static int filter_len = 0;
-        char _filter[128];
-        char buf[256 + 8] = { 0 };
+        static __thread char filter_buf[128] = { 0 };
+        static __thread int filter_len = 0;
         int ret = 0;
 
         if (!data->proc_list_info && !data->proc_list_sel) {
                 wnd_identity_proc_list_build(data);
+                memset(filter_buf, 0x00, sizeof(filter_buf));
+                filter_len = 0;
         }
 
         nk_layout_row_dynamic(ctx, widget_h, 1);
-        nk_edit_string(ctx, NK_EDIT_FIELD, filter_buf, &filter_len, sizeof(buf), nk_filter_default);
+        nk_edit_string(ctx, NK_EDIT_FIELD, filter_buf, &filter_len, sizeof(filter_buf), nk_filter_default);
 
-        snprintf(_filter, sizeof(_filter), "%.*s", filter_len, filter_buf);
-        _filter[sizeof(_filter) - 1] = '\0';
+        if (filter_len >= 0)
+                filter_buf[filter_len] = '\0';
+
+        filter_buf[sizeof(filter_buf) - 1] = '\0';
 
         nk_layout_row_dynamic(ctx, 12 * widget_h, 1);
 
         if (nk_group_begin(ctx, "", NK_WINDOW_BORDER)) {
-                nk_layout_row_dynamic(ctx, widget_h, 1);
+                nk_layout_row_begin(ctx, NK_DYNAMIC, widget_h, 2);
+                nk_layout_row_push(ctx, 0.3);
+                nk_label(ctx, "PID", NK_TEXT_LEFT);
+                nk_layout_row_push(ctx, 0.7);
+                nk_label(ctx, "Process", NK_TEXT_LEFT);
+                nk_layout_row_end(ctx);
 
                 for (size_t i = 0; i < data->proc_list_cnt; ++i) {
-                        snprintf(buf, sizeof(buf),"%s (pid: %d)", data->proc_list_info[i].name, data->proc_list_info[i].pid);
+                        char *process = data->proc_list_info[i].name;
+                        char pid[16] = { 0 };
 
-                        if (!is_strptr_set(filter_buf) || strstr(data->proc_list_info[i].name, _filter) ) {
-                                nk_selectable_label(ctx, buf, NK_TEXT_LEFT, &data->proc_list_sel[i]);
+                        snprintf(pid, sizeof(pid), "%d", data->proc_list_info[i].pid);
+
+                        if (!is_strptr_set(filter_buf) || strstr(process, filter_buf) ) {
+                                nk_layout_row_begin(ctx, NK_DYNAMIC, widget_h, 2);
+                                nk_layout_row_push(ctx, 0.3);
+                                nk_selectable_label(ctx, pid, NK_TEXT_LEFT, &data->proc_list_sel[i]);
+                                nk_layout_row_push(ctx, 0.7);
+                                nk_selectable_label(ctx, is_strptr_set(process) ? process : " ", NK_TEXT_LEFT, &data->proc_list_sel[i]);
+                                nk_layout_row_end(ctx);
                         }
                 }
 
@@ -499,7 +535,6 @@ int wnd_identity_process_list_select(struct nk_context *ctx, struct profile_wnd_
         return 0;
 
 close:
-        filter_len = 0;
         memset(filter_buf, '\0', sizeof(filter_buf));
         data->proc_sel_popup = 0;
         nk_popup_close(ctx);
@@ -717,14 +752,15 @@ void wnd_supervisor_nodemap_draw(struct nk_context *ctx, struct supervisor_cfg *
 void wnd_supervisor_affinity_draw(struct nk_context *ctx, int *popup, struct supervisor_cfg *cfg)
 {
         if (nk_tree_push(ctx, NK_TREE_NODE, "Affinity Mask", NK_MAXIMIZED)) {
-                char b[64] = { 0 };
-
-                snprintf(b, sizeof(b), "0x%016jx", cfg->affinity);
                 nk_layout_row_dynamic(ctx, widget_h, 1);
-
                 nk_widget_tooltip(ctx, "Click to edit affinity");
-                if (nk_button_label(ctx, b))
-                        *popup = 1;
+                {
+                        char b[64] = { 0 };
+                        snprintf(b, sizeof(b), "0x%016jx", cfg->affinity);
+
+                        if (nk_button_label(ctx, b))
+                                *popup = 1;
+                }
 
                 if (*popup) {
                         static char buf[16 + 4] = { 0 };
@@ -753,11 +789,10 @@ void wnd_supervisor_affinity_draw(struct nk_context *ctx, int *popup, struct sup
                                 }
 
                                 {
-                                        char b[16 + 2] = { 0 };
+                                        if (buflen > 0 && (size_t)buflen < sizeof(buf))
+                                                buf[buflen] = '\0';
 
-                                        snprintf(b, sizeof(b), "%.*s", buflen, buf);
-
-                                        t = strtoull(b, NULL, 16);
+                                        t = strtoull(buf, NULL, 16);
                                         if (errno != ERANGE) {
                                                 if (t != cfg->affinity) {
                                                         cfg->affinity = t;
@@ -1057,7 +1092,7 @@ void *profile_wnd_thread_worker(void *data)
         nkgdi_window_icon_set(&wnd, LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON)));
         nkgdi_window_userdata_set(&wnd, &wnd_data);
         nkgdi_window_set_center(&wnd);
-        nk_set_style(nkgdi_window_nkctx_get(&wnd), THEME_DARK);
+        nk_set_style(nkgdi_window_nkctx_get(&wnd), nk_theme);
 
         nkgdi_window_blocking_update(&wnd);
 
@@ -1107,6 +1142,9 @@ void gui_deinit(void)
 {
         if (hFont != INVALID_HANDLE_VALUE)
                 RemoveFontMemResourceEx(hFont);
+
+        if (READ_ONCE(profile_wnd_tid))
+                pthread_join(profile_wnd_tid, NULL);
 
         nkgdi_window_shutdown();
 }
