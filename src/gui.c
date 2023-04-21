@@ -61,25 +61,26 @@ struct profile_wnd_data {
 
 static HANDLE hFont = INVALID_HANDLE_VALUE;
 static float widget_h = 40.0f;
+static float menu_h = 25.0f;
 static int nk_theme = THEME_DARK;
 pthread_t profile_wnd_tid;
 
 static const opt_val_t nk_theme_strs[] = {
-        [THEME_DEFAULT] = { "default", NULL },
-        [THEME_BLACK] = { "black", NULL },
-        [THEME_WHITE] = { "white", NULL },
-        [THEME_RED] = { "red", NULL },
-        [THEME_BLUE] = { "blue", NULL },
-        [THEME_GREEN] = { "green", NULL },
-        [THEME_PURPLE] = { "purple", NULL },
-        [THEME_BROWN] = { "brown", NULL },
-        [THEME_DRACULA] = { "dracula", NULL },
-        [THEME_DARK] = { "dark", NULL },
-        [THEME_GRUVBOX] = {"gruvbox", NULL },
+        [THEME_DEFAULT] = { "nuklear", "Nuklear Default" },
+        [THEME_BLACK] = { "black", "Black" },
+        [THEME_WHITE] = { "white", "White" },
+        [THEME_RED] = { "red", "Red" },
+        [THEME_BLUE] = { "blue", "Blue" },
+        [THEME_GREEN] = { "green", "Green" },
+        [THEME_PURPLE] = { "purple", "Purple" },
+        [THEME_BROWN] = { "brown", "Brown" },
+        [THEME_DRACULA] = { "dracula", "Dracula" },
+        [THEME_DARK] = { "dark", "Dark" },
+        [THEME_GRUVBOX] = {"gruvbox", "Gruvbox" },
+        [THEME_SOLARIZED_LIGHT] = {"solarized_light", "Solarized Light" },
+        [THEME_SOLARIZED_DARK] = {"solarized_dark", "Solarized Dark" },
         { NULL, NULL },
 };
-
-lopt_optval(nk_theme, &nk_theme, sizeof(nk_theme), nk_theme_strs, "GUI Theme");
 
 static inline int list_is_null(const struct list_head *head)
 {
@@ -231,19 +232,46 @@ int wnd_profile_reload(struct profile_wnd_data *data)
 
 int wnd_profile_menubar_draw(struct nk_context *ctx)
 {
+        int ret = 0;
+
         nk_menubar_begin(ctx);
 
-        nk_layout_row_begin(ctx, NK_STATIC, widget_h, 1);
+        nk_layout_row_begin(ctx, NK_STATIC, menu_h, 2);
         nk_layout_row_push(ctx, 45);
         if (nk_menu_begin_label(ctx, "File", NK_TEXT_ALIGN_LEFT, nk_vec2(120, 200))) {
-                nk_layout_row_dynamic(ctx, widget_h, 1);
+                nk_layout_row_dynamic(ctx, menu_h, 1);
 
                 if (nk_menu_item_label(ctx, "Save", NK_TEXT_ALIGN_LEFT)) {
                         usrcfg_save();
                 }
 
                 if (nk_menu_item_label(ctx, "Close", NK_TEXT_ALIGN_LEFT)) {
-                        return 1;
+                        ret = 1;
+                }
+
+                nk_menu_end(ctx);
+        }
+
+        nk_layout_row_push(ctx, 45);
+        if (nk_menu_begin_label(ctx, "View", NK_TEXT_ALIGN_LEFT, nk_vec2(200, 800))) {
+                enum menu_selected { MENU_NONE, MENU_THEME, MENU_TEST };
+                enum nk_collapse_states state;
+                static __thread enum menu_selected selected = MENU_NONE;
+
+                state = selected == MENU_THEME ? NK_MAXIMIZED : NK_MINIMIZED;
+                if (nk_tree_state_push(ctx, NK_TREE_NODE, "Theme", &state)) {
+                        selected = MENU_THEME;
+
+                        for (int i = 0; i < NUM_NK_THEMES; i++) {
+                                if (nk_theme_strs[i].desc && nk_menu_item_label(ctx, nk_theme_strs[i].desc, NK_TEXT_ALIGN_LEFT)) {
+                                        nk_theme = i;
+                                        nk_set_style(ctx, nk_theme);
+                                }
+                        }
+
+                        nk_tree_pop(ctx);
+                } else {
+                        selected = (selected == MENU_THEME) ? MENU_NONE : selected;
                 }
 
                 nk_menu_end(ctx);
@@ -251,7 +279,7 @@ int wnd_profile_menubar_draw(struct nk_context *ctx)
 
         nk_menubar_end(ctx);
 
-        return 0;
+        return ret;
 }
 
 void wnd_profile_delete(struct profile_wnd_data *data)
@@ -763,10 +791,11 @@ void wnd_supervisor_affinity_draw(struct nk_context *ctx, int *popup, struct sup
                 }
 
                 if (*popup) {
-                        static char buf[16 + 4] = { 0 };
-                        static int buflen = -1;
+                        static __thread char hex_buf[16 + 4] = { 0 };
+                        static __thread int buflen = -1;
+                        uint64_t max_mask = GENMASK_ULL(g_sys_info.cpu_grp[0].cpu_cnt - 1, 0);
 
-                        cfg->affinity &= BIT_ULL(g_sys_info.cpu_grp[0].cpu_cnt) - 1;
+                        cfg->affinity &= max_mask;
 
                         if (nk_popup_begin(ctx, NK_POPUP_STATIC,
                                            "Set Affinity Mask...",
@@ -777,25 +806,25 @@ void wnd_supervisor_affinity_draw(struct nk_context *ctx, int *popup, struct sup
                                 int map[BITS_PER_LONG_LONG] = { 0 };
 
                                 if (buflen < 0) {
-                                        memset(buf, '\0', sizeof(buf));
-                                        buflen = snprintf(buf, sizeof(buf), "%016jx", cfg->affinity);
+                                        memset(hex_buf, '\0', sizeof(hex_buf));
+                                        buflen = snprintf(hex_buf, sizeof(hex_buf), "%016jx", cfg->affinity);
                                 }
 
                                 nk_layout_row_dynamic(ctx, widget_h, 1);
-                                nk_edit_string(ctx, NK_EDIT_SIMPLE, buf, &buflen, 16 + 1, nk_filter_hex);
+                                nk_edit_string(ctx, NK_EDIT_SIMPLE, hex_buf, &buflen, 16 + 1, nk_filter_hex);
 
                                 if (buflen > 16) {
                                         buflen = 16;
                                 }
 
                                 {
-                                        if (buflen > 0 && (size_t)buflen < sizeof(buf))
-                                                buf[buflen] = '\0';
+                                        if (buflen > 0 && (size_t)buflen < sizeof(hex_buf))
+                                                hex_buf[buflen] = '\0';
 
-                                        t = strtoull(buf, NULL, 16);
+                                        t = strtoull(hex_buf, NULL, 16);
                                         if (errno != ERANGE) {
                                                 if (t != cfg->affinity) {
-                                                        cfg->affinity = t;
+                                                        cfg->affinity = t & max_mask;
                                                         last = t; // do not update text input box
                                                 }
                                         }
@@ -811,7 +840,7 @@ void wnd_supervisor_affinity_draw(struct nk_context *ctx, int *popup, struct sup
                                                 snprintf(b, sizeof(b), "%d", j);
 
                                                 map[j] = (cfg->affinity & BIT_ULL(j)) ? 1 : 0;
-                                                nk_checkbox_label(ctx, b,  &map[j]);
+                                                nk_checkbox_label_disabled(ctx, b, &map[j], BIT_ULL(j) & max_mask ? 0 : 1);
                                                 t |= map[j] ? BIT_ULL(j) : 0;
                                         }
                                 }
