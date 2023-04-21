@@ -346,8 +346,10 @@ int usrcfg_init(void)
 
         pr_info("load json config: %s\n", g_cfg.json_path);
 
-        if ((err = jbuf_load(jbuf, g_cfg.json_path)))
-                return err;
+        if (jbuf_load(jbuf, g_cfg.json_path)) {
+                pr_mb_err("failed to load config, continue with default values\n");
+                return 0;
+        }
 
         pr_info("loaded config:\n");
 
