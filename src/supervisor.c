@@ -1861,7 +1861,7 @@ static int thread_rand_node_affinity_set(DWORD tid, va_list ap)
                 goto out;
         }
 
-        new_aff.Mask = profile->processes.affinity;
+        new_aff.Mask = profile->threads.affinity;
         new_aff.Group = rand() % g_sys_info.nr_cpu_grp; // 0 <= result < nr_cpu_grp
 
         affinity_mask_limit(&new_aff, new_aff.Mask, new_aff.Group);
