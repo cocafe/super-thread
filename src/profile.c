@@ -13,8 +13,8 @@ static void affinity_mask_limit(struct supervisor_cfg *cfg)
 {
         size_t nr_cpu_grp = g_sys_info.nr_cpu_grp;
         size_t cpu_cnt = g_sys_info.cpu_grp[0].cpu_cnt;
-        uint32_t avail_node_map = GENMASK(nr_cpu_grp - 1, 0);
-        uint32_t avail_affinity_map = GENMASK(cpu_cnt - 1, 0);
+        uint64_t avail_node_map = GENMASK_ULL(nr_cpu_grp - 1, 0);
+        uint64_t avail_affinity_map = GENMASK_ULL(cpu_cnt - 1, 0);
 
         cfg->node_map &= avail_node_map;
         cfg->affinity &= avail_affinity_map;
